@@ -19,7 +19,17 @@ const appFirebase = initializeApp(firebaseConfig);
 const db = getFirestore(appFirebase, firebaseConfig.firestoreDatabaseId);
 
 // === GenAI Setup ===
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+let ai: GoogleGenAI | null = null;
+function getAI(): GoogleGenAI {
+  if (!ai) {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) {
+      console.warn("GEMINI_API_KEY is not set. AI features will fail.");
+    }
+    ai = new GoogleGenAI({ apiKey: key || "dummy-key-to-prevent-crash" });
+  }
+  return ai;
+}
 
 // === Global State ===
 const activeQuizzes = new Map<string, { question: string; answer: string }>();
@@ -29,7 +39,7 @@ let sock: any = null;
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = parseInt(process.env.PORT as string) || 3000;
   const server = http.createServer(app);
   const io = new SocketIOServer(server, { cors: { origin: "*" } });
 
@@ -385,7 +395,7 @@ async function processWithGemini(text: string, senderId: string): Promise<string
     }
   ];
 
-  const chat = ai.chats.create({
+  const chat = getAI().chats.create({
     model: "gemini-2.5-pro",
     config: {
       systemInstruction: "You are a helpful, intelligent WhatsApp AI bot. You can search the web, calculate math expressions, and schedule events. Keep your answers concise, friendly, and formatted nicely for WhatsApp.",
