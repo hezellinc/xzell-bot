@@ -4,7 +4,7 @@ import { createServer as createViteServer } from "vite";
 import { Server as SocketIOServer } from "socket.io";
 import http from "http";
 import fs from "fs";
-import { makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage, getContentType } from "@whiskeysockets/baileys";
+import { makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage, getContentType, generateWAMessageFromContent } from "@whiskeysockets/baileys";
 import { Sticker, StickerTypes } from "wa-sticker-formatter";
 import axios from "axios";
 import pino from "pino";
@@ -232,11 +232,20 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
       if (!msg.key.fromMe) return;
 
       const sender = msg.key.remoteJid;
-      const text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
-      if (!text) return;
+      let text = msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption || msg.message.videoMessage?.caption || "";
+      
+      if (msg.message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson) {
+          try {
+              const params = JSON.parse(msg.message.interactiveResponseMessage.nativeFlowResponseMessage.paramsJson);
+              if (params.id) text = params.id;
+          } catch(e){}
+      } else if (msg.message.templateButtonReplyMessage?.selectedId) {
+          text = msg.message.templateButtonReplyMessage.selectedId;
+      } else if (msg.message.buttonsResponseMessage?.selectedButtonId) {
+          text = msg.message.buttonsResponseMessage.selectedButtonId;
+      }
 
-      // MODE SUPER PRIVAT: Abaikan obrolan biasa (yang tidak diawali titik) agar tidak merespons chat normal Anda
-      if (!text.startsWith('.')) return;
+      if (!text) return;
 
       const reply = async (t: string) => sock.sendMessage(sender, { text: t }, { quoted: msg });
 
@@ -271,7 +280,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
       if (activeRPG.has(sender)) {
           const state = activeRPG.get(sender)!;
           const user = await getUserProfile(sender);
-          const cmd = text.toLowerCase();
+          const cmd = text.toLowerCase().replace(/^\./, ''); // remove dot from button id or typed command
           
           if (cmd === 'serang') {
               const dmg = Math.floor(Math.random() * 25) + 10;
@@ -322,7 +331,8 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
           }
       }
 
-      // Semua pesan sudah pasti berawalan titik karena pengecekan di atas
+      // MODE SUPER PRIVAT: Abaikan obrolan biasa (yang tidak diawali titik) agar tidak merespons chat normal Anda
+      if (!text.startsWith('.')) return;
 
       // Command Parser
       const args = text.slice(1).trim().split(/ +/);
@@ -622,14 +632,36 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               }
               case 'kuis': {
                   const questions = [
-                      { question: "Apa yang sebesar gajah tetapi beratnya 0 kg?", hint: "B_y_ng_n g_j_h", answer: "bayangan gajah" },
-                      { question: "Apa ibukota negara Indonesia?", hint: "J_k_rt_", answer: "Jakarta" },
-                      { question: "Hewan apa yang bernapas dengan insang?", hint: "I_k_n", answer: "Ikan" },
-                      { question: "Siapa penemu lampu pijar?", hint: "T_h_m_s E_i_s_n", answer: "Thomas Edison" }
+                      { question: "Apa yang sebesar gajah tetapi beratnya 0 kg?", options: ["Bayangan gajah", "Anak gajah", "Balon gajah", "Patung gajah"], answer: "Bayangan gajah" },
+                      { question: "Apa ibukota negara Indonesia?", options: ["Surabaya", "Jakarta", "Bandung", "Medan"], answer: "Jakarta" },
+                      { question: "Hewan apa yang bernapas dengan insang?", options: ["Kucing", "Burung", "Ikan", "Katak"], answer: "Ikan" },
+                      { question: "Siapa penemu lampu pijar?", options: ["Nikola Tesla", "Albert Einstein", "Thomas Edison", "Isaac Newton"], answer: "Thomas Edison" }
                   ];
                   const q = questions[Math.floor(Math.random() * questions.length)];
                   activeQuizzes.set(sender, q);
-                  await reply(`*GAME KUIS*\n\nSoal: ${q.question}\nPetunjuk: ${q.hint}\n\nBalas soal ini dengan *nyerah* jika ingin menyerah.`);
+                  
+                  const buttons = q.options.map((opt, idx) => ({
+                      name: "quick_reply",
+                      buttonParamsJson: JSON.stringify({ display_text: String.fromCharCode(65 + idx) + ". " + opt, id: opt })
+                  }));
+                  buttons.push({
+                      name: "quick_reply",
+                      buttonParamsJson: JSON.stringify({ display_text: "🏳️ Nyerah", id: "nyerah" })
+                  });
+                  
+                  const msgKuis = generateWAMessageFromContent(sender, {
+                      viewOnceMessage: {
+                          message: {
+                              interactiveMessage: {
+                                  header: { title: "🎯 *GAME KUIS*", hasMediaAttachment: false },
+                                  body: { text: `Soal: ${q.question}\n\nPilih jawabanmu di bawah:` },
+                                  footer: { text: "Nexus AI" },
+                                  nativeFlowMessage: { buttons }
+                              }
+                          }
+                      }
+                  }, { userJid: sock.user?.id });
+                  await sock.relayMessage(sender, msgKuis.message!, { messageId: msgKuis.key.id! });
                   break;
               }
               case 'rpg': {
@@ -643,7 +675,26 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   const monsters = ["🐉 Naga Merah", "🧟 Zombie Gemuk", "🐺 Serigala Ganas", "🧛 Vampir Haus Darah", "👻 Hantu Gentayangan"];
                   const monster = monsters[Math.floor(Math.random() * monsters.length)];
                   activeRPG.set(sender, { monsterHp: 100, monster });
-                  await reply(`⚠️ *AWAS!* Seekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?\nBalas chat ini dengan:\n⚔️ *serang*\n🧪 *heal*\n🏃 *kabur*`);
+                  
+                  const msgRPG = generateWAMessageFromContent(sender, {
+                      viewOnceMessage: {
+                          message: {
+                              interactiveMessage: {
+                                  header: { title: "⚠️ *PERTARUNGAN DIMULAI*", hasMediaAttachment: false },
+                                  body: { text: `Seekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?` },
+                                  footer: { text: "Nexus AI RPG" },
+                                  nativeFlowMessage: {
+                                      buttons: [
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚔️ Serang", id: ".serang" }) },
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🧪 Heal", id: ".heal" }) },
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🏃 Kabur", id: ".kabur" }) }
+                                      ]
+                                  }
+                              }
+                          }
+                      }
+                  }, { userJid: sock.user?.id });
+                  await sock.relayMessage(sender, msgRPG.message!, { messageId: msgRPG.key.id! });
                   break;
               }
               case 'slot': {
