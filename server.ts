@@ -437,7 +437,7 @@ async function processWithGemini(text: string, senderId: string): Promise<string
   ];
 
   const chat = getAI().chats.create({
-    model: "gemini-3.6-flash",
+    model: "gemini-1.5-flash",
     config: {
       systemInstruction: "You are a helpful, intelligent WhatsApp AI bot. You can search the web, calculate math expressions, and schedule events. Keep your answers concise, friendly, and formatted nicely for WhatsApp.",
       tools: tools
