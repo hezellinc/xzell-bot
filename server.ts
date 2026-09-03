@@ -414,12 +414,67 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               }
               case 'brat':
               case 'bratgif': {
-                  // Mocking brat using a public dummy image generator for pure JS approach
-                  const t = encodeURIComponent(payload || "brat");
-                  const url = `https://dummyimage.com/500x500/ffffff/000000.png&text=${t}`;
-                  const res = await axios.get(url, { responseType: 'arraybuffer' });
-                  const sticker = new Sticker(res.data, { pack: 'Nexus AI', author: 'Bot', type: StickerTypes.FULL });
-                  await sock.sendMessage(sender, await sticker.toMessage(), { quoted: msg });
+                  try {
+                      const text = payload || "brat";
+                      const { GlobalFonts, createCanvas } = await import('@napi-rs/canvas');
+                      
+                      if (!(global as any).fontsRegistered) {
+                          GlobalFonts.registerFromPath('./assets/OpenSans-Regular.ttf', 'Open Sans');
+                          GlobalFonts.registerFromPath('./assets/NotoColorEmoji.ttf', 'Noto Color Emoji');
+                          (global as any).fontsRegistered = true;
+                      }
+                      
+                      const canvas = createCanvas(512, 512);
+                      const ctx = canvas.getContext('2d');
+                      
+                      ctx.fillStyle = '#ffffff';
+                      ctx.fillRect(0, 0, 512, 512);
+                      
+                      let fontSize = 64;
+                      if (text.length > 20) fontSize = 48;
+                      if (text.length > 50) fontSize = 36;
+                      
+                      ctx.font = `${fontSize}px "Open Sans", "Noto Color Emoji"`;
+                      ctx.fillStyle = '#000000';
+                      ctx.textAlign = 'left';
+                      ctx.textBaseline = 'middle';
+                      
+                      const paragraphs = text.split('\n');
+                      const lines: string[] = [];
+                      const maxWidth = 472;
+                      
+                      for (let p = 0; p < paragraphs.length; p++) {
+                          const words = paragraphs[p].split(' ');
+                          let currentLine = '';
+                          for (let i = 0; i < words.length; i++) {
+                              const testLine = currentLine + words[i] + ' ';
+                              const testWidth = ctx.measureText(testLine).width;
+                              if (testWidth > maxWidth && i > 0) {
+                                  lines.push(currentLine.trim());
+                                  currentLine = words[i] + ' ';
+                              } else {
+                                  currentLine = testLine;
+                              }
+                          }
+                          lines.push(currentLine.trim());
+                      }
+                      
+                      const lineHeight = fontSize * 1.2;
+                      const totalHeight = lines.length * lineHeight;
+                      let startY = 256 - (totalHeight / 2) + (lineHeight / 2);
+                      
+                      for (let i = 0; i < lines.length; i++) {
+                          ctx.fillText(lines[i], 20, startY);
+                          startY += lineHeight;
+                      }
+                      
+                      const buffer = canvas.toBuffer("image/png");
+                      const sticker = new Sticker(buffer as Buffer, { pack: 'Nexus AI', author: 'Bot', type: StickerTypes.FULL });
+                      await sock.sendMessage(sender, await sticker.toMessage(), { quoted: msg });
+                  } catch (err) {
+                      console.error("Error brat:", err);
+                      await reply("Maaf, terjadi kesalahan saat membuat stiker.");
+                  }
                   break;
               }
               case 'remove.bg': {
@@ -449,9 +504,84 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   break;
               }
               case 'fwindow': {
-                  const t = encodeURIComponent(payload || "Windows");
-                  const url = `https://dummyimage.com/600x400/cccccc/000000.png&text=${t}`;
-                  await sock.sendMessage(sender, { image: { url }, caption: "Windows Media Player" }, { quoted: msg });
+                  try {
+                      if (!payload) {
+                          return await reply("Ketik teks yang ingin dimasukkan ke dalam gambar.");
+                      }
+                      
+                      const { GlobalFonts, createCanvas, loadImage } = await import('@napi-rs/canvas');
+                      
+                      if (!(global as any).fontsRegistered) {
+                          GlobalFonts.registerFromPath('./assets/OpenSans-Regular.ttf', 'Open Sans');
+                          GlobalFonts.registerFromPath('./assets/NotoColorEmoji.ttf', 'Noto Color Emoji');
+                          (global as any).fontsRegistered = true;
+                      }
+                      
+                      const img = await loadImage('fwindow.jpg');
+                      // Keep original ratio but scale width to 800
+                      const targetWidth = 800;
+                      const targetHeight = (800 / img.width) * img.height;
+                      
+                      const canvas = createCanvas(targetWidth, targetHeight);
+                      const ctx = canvas.getContext('2d');
+                      
+                      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+                      
+                      const text = payload;
+                      
+                      let fontSize = 64;
+                      if (text.length > 20) fontSize = 48;
+                      if (text.length > 50) fontSize = 36;
+                      
+                      ctx.font = `${fontSize}px "Open Sans", "Noto Color Emoji"`;
+                      ctx.fillStyle = '#000000';
+                      ctx.textAlign = 'center';
+                      ctx.textBaseline = 'middle';
+                      
+                      const paddingX = 40;
+                      const maxWidth = targetWidth - (paddingX * 2);
+                      const startYOffset = 120; // Lower a bit for the media player title
+                      
+                      const paragraphs = text.split('\n');
+                      const lines: string[] = [];
+                      
+                      for (let p = 0; p < paragraphs.length; p++) {
+                          const words = paragraphs[p].split(' ');
+                          let currentLine = '';
+                          for (let i = 0; i < words.length; i++) {
+                              const testLine = currentLine + words[i] + ' ';
+                              const testWidth = ctx.measureText(testLine).width;
+                              if (testWidth > maxWidth && i > 0) {
+                                  lines.push(currentLine.trim());
+                                  currentLine = words[i] + ' ';
+                              } else {
+                                  currentLine = testLine;
+                              }
+                          }
+                          lines.push(currentLine.trim());
+                      }
+                      
+                      const lineHeight = fontSize * 1.2;
+                      const totalHeight = lines.length * lineHeight;
+                      
+                      // Calculate center Y within the white box area
+                      // The white box starts roughly around startYOffset, and ends roughly at targetHeight - 150
+                      const whiteBoxHeight = targetHeight - startYOffset - 150;
+                      let startY = startYOffset + (whiteBoxHeight / 2) - (totalHeight / 2) + (lineHeight / 2);
+                      
+                      const centerX = targetWidth / 2;
+                      
+                      for (let i = 0; i < lines.length; i++) {
+                          ctx.fillText(lines[i], centerX, startY);
+                          startY += lineHeight;
+                      }
+                      
+                      const buffer = canvas.toBuffer("image/jpeg");
+                      await sock.sendMessage(sender, { image: buffer, caption: "Windows Media Player" }, { quoted: msg });
+                  } catch (err) {
+                      console.error("Error fwindow:", err);
+                      await reply("Maaf, terjadi kesalahan saat memproses gambar.");
+                  }
                   break;
               }
               case 'iqc': {
