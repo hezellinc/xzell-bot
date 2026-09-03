@@ -247,8 +247,35 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               case 'ask':
               case 'chat': {
                   if (!payload) return await reply("Ketik pesan untuk AI, contoh: .ai halo apa kabar?");
-                  const responseText = await processWithGemini(payload, sender);
-                  await sock.sendMessage(sender, { text: responseText }, { quoted: msg });
+                  try {
+                      const responseText = await processWithGemini(payload, sender);
+                      await sock.sendMessage(sender, { text: responseText }, { quoted: msg });
+                  } catch (aiError: any) {
+                      await reply(`Gemini Error: ${aiError.message || 'Pastikan GEMINI_API_KEY sudah diisi di Railway!'}`);
+                  }
+                  break;
+              }
+              case 'menu':
+              case 'help': {
+                  const menuText = `*🤖 NEXUS BOT MENU*\n\n` +
+                  `*AI & Chat*\n` +
+                  `• .ai [pertanyaan] - Chat dengan Gemini AI\n` +
+                  `• .ask / .chat - Sama dengan .ai\n\n` +
+                  `*Media & Tools*\n` +
+                  `• .sticker - Balas gambar/video untuk dijadikan stiker\n` +
+                  `• .bratgif [teks] - Buat stiker teks ala brat\n` +
+                  `• .remove.bg - Hapus background foto\n` +
+                  `• .hd - Penjernih foto (butuh API key)\n` +
+                  `• .fwindow [teks] - Buat gambar fake windows\n` +
+                  `• .iqc [teks] - Fake chat bubble\n\n` +
+                  `*Hiburan*\n` +
+                  `• .spoplay [judul] - Cari preview lagu\n` +
+                  `• .tiktok [url] - Download video tiktok\n` +
+                  `• .kuis - Main tebak-tebakan\n\n` +
+                  `*Utility*\n` +
+                  `• .rvo - Balas pesan 1x lihat (View Once) untuk melihatnya lagi\n` +
+                  `• .menu - Tampilkan menu ini\n`;
+                  await reply(menuText);
                   break;
               }
               case 'sticker': {
