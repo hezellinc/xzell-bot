@@ -80,9 +80,9 @@ async function startServer() {
       }
     });
 
-    socket.on("connect_whatsapp", () => {
+    socket.on("connect_whatsapp", (data) => {
        if (botStatus === "disconnected") {
-          startWhatsAppBot(io);
+          startWhatsAppBot(io, data?.method, data?.number);
        }
     });
 
@@ -129,7 +129,7 @@ async function startServer() {
 }
 
 // === WhatsApp Bot Logic ===
-async function startWhatsAppBot(io: SocketIOServer) {
+async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing" = "qr", phoneNumber?: string) {
   try {
     const { state, saveCreds } = await useMultiFileAuthState('./.baileys_auth');
     botStatus = "connecting";
@@ -139,7 +139,21 @@ async function startWhatsAppBot(io: SocketIOServer) {
       auth: state,
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }) as any,
+      browser: ['NexusBot', 'Chrome', '1.0.0'],
     });
+
+    if (authMethod === "pairing" && phoneNumber && !sock.authState.creds.registered) {
+       setTimeout(async () => {
+          try {
+             let code = await sock.requestPairingCode(phoneNumber);
+             code = code?.match(/.{1,4}/g)?.join("-") || code;
+             botStatus = "waiting_for_qr"; // We reuse the state
+             io.emit("bot_status", { status: botStatus, pairingCode: code });
+          } catch(e) {
+             console.error("Pairing code error", e);
+          }
+       }, 2000);
+    }
 
     sock.ev.on('connection.update', async (update: any) => {
       const { connection, lastDisconnect, qr } = update;
