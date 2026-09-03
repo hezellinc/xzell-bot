@@ -10,7 +10,7 @@ import axios from "axios";
 import pino from "pino";
 import QRCode from "qrcode";
 import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, getCountFromServer } from "firebase/firestore";
+import { getFirestore, collection, addDoc, getDocs, query, orderBy, limit, getCountFromServer, doc, getDoc, setDoc } from "firebase/firestore";
 import { GoogleGenAI, Type } from "@google/genai";
 
 // === Firebase Setup ===
@@ -32,10 +32,50 @@ function getAI(): GoogleGenAI {
 }
 
 // === Global State ===
-const activeQuizzes = new Map<string, { question: string; answer: string }>();
+const activeQuizzes = new Map<string, { question: string; answer: string; hint?: string }>();
+const activeRPG = new Map<string, { monsterHp: number; monster: string }>();
 let botStatus = "disconnected";
 let qrCodeUrl: string | null = null;
 let sock: any = null;
+
+// === RPG Database Logic ===
+interface UserProfile {
+    hp: number;
+    maxHp: number;
+    level: number;
+    xp: number;
+    balance: number;
+    inventory: { potion: number };
+}
+
+async function getUserProfile(sender: string): Promise<UserProfile> {
+    const userRef = doc(db, "users", sender);
+    const snap = await getDoc(userRef);
+    if (snap.exists()) {
+        return snap.data() as UserProfile;
+    } else {
+        const newUser: UserProfile = { hp: 100, maxHp: 100, level: 1, xp: 0, balance: 100, inventory: { potion: 3 } };
+        await setDoc(userRef, newUser);
+        return newUser;
+    }
+}
+
+async function updateUserProfile(sender: string, updates: Partial<UserProfile>): Promise<UserProfile> {
+    const userRef = doc(db, "users", sender);
+    let user = await getUserProfile(sender);
+    user = { ...user, ...updates };
+    
+    const nextLevelXp = user.level * 100;
+    if (user.xp >= nextLevelXp) {
+        user.level += 1;
+        user.xp -= nextLevelXp;
+        user.maxHp += 20;
+        user.hp = user.maxHp; // Heal on level up
+    }
+    
+    await setDoc(userRef, user);
+    return user;
+}
 
 async function startServer() {
   const app = express();
@@ -210,13 +250,75 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
           const quiz = activeQuizzes.get(sender);
           if (text.toLowerCase() === quiz!.answer.toLowerCase()) {
               activeQuizzes.delete(sender);
-              await reply("🎉 Benar! Jawaban kamu tepat.");
+              const user = await getUserProfile(sender);
+              const reward = Math.floor(Math.random() * 50) + 50;
+              await updateUserProfile(sender, { balance: user.balance + reward });
+              await reply(`🎉 *Selamat Jawaban Kamu Benar*\n\nJawaban: ${quiz!.answer}\nBalance: $${user.balance + reward}\n\nIngin main lagi? Kirim perintah .kuis`);
+              return;
+          } else if (text.toLowerCase() === 'nyerah') {
+              activeQuizzes.delete(sender);
+              await reply(`🏳️ Kamu menyerah.\nJawaban yang benar adalah: ${quiz!.answer}`);
               return;
           } else if (text.startsWith('.')) {
               activeQuizzes.delete(sender); // abandon quiz on new command
           } else {
-              await reply(`❌ Salah! Coba lagi.\nPertanyaan: ${quiz!.question}`);
+              await reply(`❌ Salah! Coba lagi.\nPertanyaan: ${quiz!.question}\n\nBalas soal ini dengan *nyerah* jika ingin menyerah.`);
               return;
+          }
+      }
+
+      // RPG State check
+      if (activeRPG.has(sender)) {
+          const state = activeRPG.get(sender)!;
+          const user = await getUserProfile(sender);
+          const cmd = text.toLowerCase();
+          
+          if (cmd === 'serang') {
+              const dmg = Math.floor(Math.random() * 25) + 10;
+              const mDmg = Math.floor(Math.random() * 20) + 5;
+              state.monsterHp -= dmg;
+              
+              if (state.monsterHp <= 0) {
+                  const reward = Math.floor(Math.random() * 300) + 100;
+                  const xpReward = Math.floor(Math.random() * 50) + 20;
+                  await updateUserProfile(sender, { balance: user.balance + reward, xp: user.xp + xpReward });
+                  activeRPG.delete(sender);
+                  await reply(`⚔️ *CRITICAL HIT!* Kamu menyerang ${state.monster} sebesar ${dmg} DMG!\n\n💀 ${state.monster} telah dikalahkan!\n🎉 Kamu mendapat *$${reward}* dan ${xpReward} XP!`);
+                  return;
+              }
+              
+              user.hp -= mDmg;
+              if (user.hp <= 0) {
+                  await updateUserProfile(sender, { hp: user.maxHp });
+                  activeRPG.delete(sender);
+                  await reply(`⚔️ Kamu menyerang sebesar ${dmg} DMG, tapi ${state.monster} membalas dengan ganas sebesar ${mDmg} DMG!\n\n☠️ *KAMU MATI!* Perjalananmu berakhir di sini... HP kamu telah dipulihkan di kota.`);
+                  return;
+              }
+              
+              await updateUserProfile(sender, { hp: user.hp });
+              await reply(`⚔️ Kamu menyerang sebesar ${dmg} DMG!\n👹 ${state.monster} membalas sebesar ${mDmg} DMG!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nKetik: *serang*, *heal*, atau *kabur*`);
+              return;
+          } else if (cmd === 'heal') {
+              if (user.inventory.potion <= 0) {
+                  await reply(`❌ Kamu tidak memiliki Potion! Ketik *serang* atau *kabur*.`);
+                  return;
+              }
+              const heal = Math.floor(Math.random() * 20) + 15;
+              const mDmg = Math.floor(Math.random() * 15) + 5;
+              const newHp = Math.min(user.maxHp, user.hp + heal - mDmg);
+              await updateUserProfile(sender, { hp: newHp, inventory: { ...user.inventory, potion: user.inventory.potion - 1 } });
+              await reply(`✨ Kamu meminum potion dan memulihkan ${heal} HP (Sisa: ${user.inventory.potion - 1}).\nNamun ${state.monster} tetap menyerangmu sebesar ${mDmg} DMG!\n\n❤️ HP Kamu: ${newHp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nKetik: *serang*, *heal*, atau *kabur*`);
+              return;
+          } else if (cmd === 'kabur') {
+              const penalty = Math.floor(Math.random() * 50) + 10;
+              await updateUserProfile(sender, { balance: Math.max(0, user.balance - penalty) });
+              activeRPG.delete(sender);
+              await reply(`🏃‍♂️💨 Kamu lari terbirit-birit dari ${state.monster} dan menjatuhkan *$${penalty}* uangmu di jalan.`);
+              return;
+          } else if (text.startsWith('.')) {
+              activeRPG.delete(sender); // abandon rpg if new command
+          } else {
+              return; // ignore non-rpg chat while in battle
           }
       }
 
@@ -257,24 +359,48 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               }
               case 'menu':
               case 'help': {
-                  const menuText = `*🤖 NEXUS BOT MENU*\n\n` +
-                  `*AI & Chat*\n` +
-                  `• .ai [pertanyaan] - Chat dengan Gemini AI\n` +
-                  `• .ask / .chat - Sama dengan .ai\n\n` +
-                  `*Media & Tools*\n` +
-                  `• .sticker - Balas gambar/video untuk dijadikan stiker\n` +
-                  `• .bratgif [teks] - Buat stiker teks ala brat\n` +
-                  `• .remove.bg - Hapus background foto\n` +
-                  `• .hd - Penjernih foto (butuh API key)\n` +
-                  `• .fwindow [teks] - Buat gambar fake windows\n` +
-                  `• .iqc [teks] - Fake chat bubble\n\n` +
-                  `*Hiburan*\n` +
-                  `• .spoplay [judul] - Cari preview lagu\n` +
-                  `• .tiktok [url] - Download video tiktok\n` +
-                  `• .kuis - Main tebak-tebakan\n\n` +
-                  `*Utility*\n` +
-                  `• .rvo - Balas pesan 1x lihat (View Once) untuk melihatnya lagi\n` +
-                  `• .menu - Tampilkan menu ini\n`;
+                  const menuText = `╭━━━〔 *NEXUS BOT* 〕━━━
+┃ 👋 Halo, Selamat Datang!
+┃ 🤖 Status: Aktif
+╰━━━━━━━━━━━━━━━━━━━━
+
+┏━━ ✦ *AI & CHAT* ✦
+┣ ⊳ .ai [pertanyaan]
+┣ ⊳ .chat / .ask
+┗━━━━━━━━━━━━━━━
+
+┏━━ ✦ *MEDIA & STIKER* ✦
+┣ ⊳ .sticker (reply foto/video)
+┣ ⊳ .brat [teks]
+┣ ⊳ .fwindow [teks]
+┣ ⊳ .iqc [teks]
+┗━━━━━━━━━━━━━━━
+
+┏━━ ✦ *DOWNLOAD & AUDIO* ✦
+┣ ⊳ .ytplay [judul lagu]
+┣ ⊳ .spoplay [judul lagu]
+┣ ⊳ .tiktok [link video]
+┗━━━━━━━━━━━━━━━
+
+┏━━ ✦ *AI EDITOR (PRO)* ✦
+┣ ⊳ .remove.bg (reply foto)
+┣ ⊳ .hd (reply foto)
+┣ ⊳ .aiedit [prompt]
+┗━━━━━━━━━━━━━━━
+
+┏━━ ✦ *GAMES & RPG* ✦
+┣ ⊳ .rpg (berburu monster)
+┣ ⊳ .profil (cek status hero)
+┣ ⊳ .slot (spin dapet uang)
+┣ ⊳ .kuis (tebak-tebakan)
+┗━━━━━━━━━━━━━━━
+
+┏━━ ✦ *UTILITY* ✦
+┣ ⊳ .rvo (buka 1x lihat)
+┣ ⊳ .menu (tampilkan menu)
+┗━━━━━━━━━━━━━━━
+
+💡 *Tips:* Jangan lupa gunakan tanda titik (.) sebelum perintah!`;
                   await reply(menuText);
                   break;
               }
@@ -286,10 +412,11 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   await sock.sendMessage(sender, await sticker.toMessage(), { quoted: msg });
                   break;
               }
+              case 'brat':
               case 'bratgif': {
                   // Mocking brat using a public dummy image generator for pure JS approach
                   const t = encodeURIComponent(payload || "brat");
-                  const url = `https://dummyimage.com/500x500/8aE31E/000000.png&text=${t}`;
+                  const url = `https://dummyimage.com/500x500/ffffff/000000.png&text=${t}`;
                   const res = await axios.get(url, { responseType: 'arraybuffer' });
                   const sticker = new Sticker(res.data, { pack: 'Nexus AI', author: 'Bot', type: StickerTypes.FULL });
                   await sock.sendMessage(sender, await sticker.toMessage(), { quoted: msg });
@@ -331,6 +458,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   await reply(`[Fake Chat]\n${payload}`);
                   break;
               }
+              case 'ytplay':
               case 'spoplay': {
                   if (!payload) return await reply("Ketik judul lagu yang dicari.");
                   try {
@@ -351,8 +479,9 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   try {
                       const res = await axios.post("https://tikwm.com/api/", { url: payload });
                       const videoUrl = res.data?.data?.play;
+                      const title = res.data?.data?.title || "TikTok Video";
                       if (videoUrl) {
-                          await sock.sendMessage(sender, { video: { url: videoUrl }, caption: "TikTok Video" }, { quoted: msg });
+                          await sock.sendMessage(sender, { video: { url: videoUrl }, caption: `${title}\n\n*Downloaded via NexusBot*` }, { quoted: msg });
                       } else {
                           await reply("Gagal mengunduh video tiktok.");
                       }
@@ -363,13 +492,68 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               }
               case 'kuis': {
                   const questions = [
-                      { question: "Apa ibukota negara Indonesia?", answer: "Jakarta" },
-                      { question: "Hewan apa yang bernapas dengan insang?", answer: "Ikan" },
-                      { question: "Siapa penemu lampu pijar?", answer: "Thomas Edison" }
+                      { question: "Apa yang sebesar gajah tetapi beratnya 0 kg?", hint: "B_y_ng_n g_j_h", answer: "bayangan gajah" },
+                      { question: "Apa ibukota negara Indonesia?", hint: "J_k_rt_", answer: "Jakarta" },
+                      { question: "Hewan apa yang bernapas dengan insang?", hint: "I_k_n", answer: "Ikan" },
+                      { question: "Siapa penemu lampu pijar?", hint: "T_h_m_s E_i_s_n", answer: "Thomas Edison" }
                   ];
                   const q = questions[Math.floor(Math.random() * questions.length)];
                   activeQuizzes.set(sender, q);
-                  await reply(`[KUIS]\n${q.question}\nKetik jawabanmu!`);
+                  await reply(`*GAME KUIS*\n\nSoal: ${q.question}\nPetunjuk: ${q.hint}\n\nBalas soal ini dengan *nyerah* jika ingin menyerah.`);
+                  break;
+              }
+              case 'rpg': {
+                  if (activeRPG.has(sender)) return await reply("Selesaikan dulu pertarunganmu yang sekarang!");
+                  const user = await getUserProfile(sender);
+                  if (user.hp <= 0) {
+                      await updateUserProfile(sender, { hp: user.maxHp });
+                      return await reply("Membangkitkan kamu di kota... HP kamu telah dipulihkan. Silakan coba lagi.");
+                  }
+                  
+                  const monsters = ["🐉 Naga Merah", "🧟 Zombie Gemuk", "🐺 Serigala Ganas", "🧛 Vampir Haus Darah", "👻 Hantu Gentayangan"];
+                  const monster = monsters[Math.floor(Math.random() * monsters.length)];
+                  activeRPG.set(sender, { monsterHp: 100, monster });
+                  await reply(`⚠️ *AWAS!* Seekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?\nBalas chat ini dengan:\n⚔️ *serang*\n🧪 *heal*\n🏃 *kabur*`);
+                  break;
+              }
+              case 'slot': {
+                  const cost = 20;
+                  const user = await getUserProfile(sender);
+                  if (user.balance < cost) return await reply(`❌ Uangmu tidak cukup! Biaya main slot adalah $${cost}.\nUangmu saat ini: $${user.balance}\n\nKetik *.rpg* atau *.kuis* untuk mencari uang.`);
+                  
+                  const emojis = ["🍎", "🍇", "💎", "7️⃣", "🍒"];
+                  const s1 = emojis[Math.floor(Math.random() * emojis.length)];
+                  const s2 = emojis[Math.floor(Math.random() * emojis.length)];
+                  const s3 = emojis[Math.floor(Math.random() * emojis.length)];
+                  
+                  let result = `🎰 *SLOT MACHINE* 🎰\n\n[ ${s1} | ${s2} | ${s3} ]\n\n`;
+                  let newBalance = user.balance - cost;
+                  if (s1 === s2 && s2 === s3) {
+                      newBalance += 500;
+                      result += `🎉 *JACKPOT!!!* Kamu menang $500!`;
+                  } else {
+                      result += `❌ *Kalah!* Coba lagi boss.`;
+                  }
+                  await updateUserProfile(sender, { balance: newBalance });
+                  await reply(result + `\n💰 Uangmu sekarang: $${newBalance}`);
+                  break;
+              }
+              case 'profil':
+              case 'stats': {
+                  const user = await getUserProfile(sender);
+                  const nextLevelXp = user.level * 100;
+                  const profilTxt = `👤 *PROFIL KARAKTER* 👤
+                  
+🔰 *Level:* ${user.level}
+✨ *XP:* ${user.xp} / ${nextLevelXp}
+❤️ *HP:* ${user.hp} / ${user.maxHp}
+💰 *Uang:* $${user.balance}
+
+🎒 *INVENTORY*
+🧪 Potion: ${user.inventory.potion}x
+
+Ketik *.rpg* untuk mulai berpetualang!`;
+                  await reply(profilTxt);
                   break;
               }
               case 'rvo': {
