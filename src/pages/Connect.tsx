@@ -96,6 +96,10 @@ export default function Connect() {
   }, [logs]);
 
   const handleConnect = () => {
+    if (authMethod === "pairing" && pairingNumber.length < 10) {
+      alert("Masukkan nomor WhatsApp yang valid (minimal 10 angka, awali dengan kode negara, contoh: 628...)");
+      return;
+    }
     socketRef.current?.emit("start_bot", { authMethod, phoneNumber: pairingNumber });
   };
 
@@ -193,7 +197,7 @@ export default function Connect() {
                   )}
                   <button 
                     onClick={handleConnect} 
-                    disabled={authMethod === "pairing" && pairingNumber.length < 10}
+                    
                     className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 disabled:grayscale shadow-lg shadow-purple-500/20"
                   >
                     Mulai Tautkan
