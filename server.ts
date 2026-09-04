@@ -193,8 +193,10 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
              io.emit("bot_status", { status: botStatus, pairingCode: code });
           } catch(e) {
              console.error("Pairing code error", e);
+             botStatus = "error";
+             io.emit("bot_status", { status: botStatus });
           }
-       }, 2000);
+       }, 3000);
     }
 
     sock.ev.on('connection.update', async (update: any) => {
@@ -268,14 +270,14 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               await updateUserProfile(sender, { balance: user.balance + reward });
               await reply(`🎉 *Selamat Jawaban Kamu Benar*\n\nJawaban: ${quiz!.answer}\nBalance: $${user.balance + reward}\n\nIngin main lagi? Kirim perintah .kuis`);
               return;
-          } else if (text.toLowerCase() === 'nyerah') {
+          } else if (text.toLowerCase() === 'nyerah' || text.toLowerCase() === '.nyerah') {
               activeQuizzes.delete(sender);
               await reply(`🏳️ Kamu menyerah.\nJawaban yang benar adalah: ${quiz!.answer}`);
               return;
-          } else if (text.startsWith('.')) {
+          } else if (text.startsWith('.') && text.length > 2 && text !== '.nyerah') {
               activeQuizzes.delete(sender); // abandon quiz on new command
           } else {
-              await reply(`❌ Salah! Coba lagi.\nPertanyaan: ${quiz!.question}\n\nBalas soal ini dengan *nyerah* jika ingin menyerah.`);
+              await reply(`❌ Salah! Coba lagi.\nPertanyaan: ${quiz!.question}\n\nPilih / ketik jawaban yang benar!`);
               return;
           }
       }
@@ -284,7 +286,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
       if (activeRPG.has(sender)) {
           const state = activeRPG.get(sender)!;
           const user = await getUserProfile(sender);
-          const cmd = text.toLowerCase().replace(/^\./, ''); // remove dot from button id or typed command
+          const cmd = text.toLowerCase().replace('.', ''); // allow 'serang' or '.serang'
           
           if (cmd === 'serang') {
               const dmg = Math.floor(Math.random() * 25) + 10;
@@ -309,29 +311,66 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               }
               
               await updateUserProfile(sender, { hp: user.hp });
-              await reply(`⚔️ Kamu menyerang sebesar ${dmg} DMG!\n👹 ${state.monster} membalas sebesar ${mDmg} DMG!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nKetik: *serang*, *heal*, atau *kabur*`);
+              
+              const msgRPG = generateWAMessageFromContent(sender, {
+                  viewOnceMessage: {
+                      message: {
+                          interactiveMessage: {
+                              header: { title: "⚠️ *PERTARUNGAN BERLANJUT*", hasMediaAttachment: false },
+                              body: { text: `⚔️ Kamu menyerang sebesar ${dmg} DMG!\n${state.monster} membalas sebesar ${mDmg} DMG!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nApa langkahmu selanjutnya?` },
+                              footer: { text: "Nexus AI RPG" },
+                              nativeFlowMessage: {
+                                  buttons: [
+                                      { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚔️ Serang", id: ".serang" }) },
+                                      { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🧪 Heal", id: ".heal" }) },
+                                      { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🏃 Kabur", id: ".kabur" }) }
+                                  ]
+                              }
+                          }
+                      }
+                  }
+              }, { userJid: sock.user?.id });
+              await sock.relayMessage(sender, msgRPG.message!, { messageId: msgRPG.key.id! });
               return;
           } else if (cmd === 'heal') {
-              if (user.inventory.potion <= 0) {
-                  await reply(`❌ Kamu tidak memiliki Potion! Ketik *serang* atau *kabur*.`);
-                  return;
+              if (user.inventory.potion > 0) {
+                  const healAmount = 50;
+                  user.hp = Math.min(user.maxHp, user.hp + healAmount);
+                  user.inventory.potion -= 1;
+                  await updateUserProfile(sender, { hp: user.hp, inventory: user.inventory });
+                  
+                  const msgRPG = generateWAMessageFromContent(sender, {
+                      viewOnceMessage: {
+                          message: {
+                              interactiveMessage: {
+                                  header: { title: "✨ *HEALING*", hasMediaAttachment: false },
+                                  body: { text: `Kamu meminum Potion (Sisa: ${user.inventory.potion}). HP kamu pulih +${healAmount}!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nLanjutkan serangan?` },
+                                  footer: { text: "Nexus AI RPG" },
+                                  nativeFlowMessage: {
+                                      buttons: [
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚔️ Serang", id: ".serang" }) },
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🧪 Heal", id: ".heal" }) },
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🏃 Kabur", id: ".kabur" }) }
+                                      ]
+                                  }
+                              }
+                          }
+                      }
+                  }, { userJid: sock.user?.id });
+                  await sock.relayMessage(sender, msgRPG.message!, { messageId: msgRPG.key.id! });
+              } else {
+                  await reply(`❌ Potion habis! Ketik *serang* atau *kabur*.`);
               }
-              const heal = Math.floor(Math.random() * 20) + 15;
-              const mDmg = Math.floor(Math.random() * 15) + 5;
-              const newHp = Math.min(user.maxHp, user.hp + heal - mDmg);
-              await updateUserProfile(sender, { hp: newHp, inventory: { ...user.inventory, potion: user.inventory.potion - 1 } });
-              await reply(`✨ Kamu meminum potion dan memulihkan ${heal} HP (Sisa: ${user.inventory.potion - 1}).\nNamun ${state.monster} tetap menyerangmu sebesar ${mDmg} DMG!\n\n❤️ HP Kamu: ${newHp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nKetik: *serang*, *heal*, atau *kabur*`);
               return;
           } else if (cmd === 'kabur') {
-              const penalty = Math.floor(Math.random() * 50) + 10;
-              await updateUserProfile(sender, { balance: Math.max(0, user.balance - penalty) });
               activeRPG.delete(sender);
-              await reply(`🏃‍♂️💨 Kamu lari terbirit-birit dari ${state.monster} dan menjatuhkan *$${penalty}* uangmu di jalan.`);
+              await reply("🏃 Kamu berhasil kabur dari pertarungan.");
               return;
-          } else if (text.startsWith('.')) {
+          } else if (cmd.startsWith('.')) {
               activeRPG.delete(sender); // abandon rpg if new command
           } else {
-              return; // ignore non-rpg chat while in battle
+              await reply(`Kamu sedang dalam pertarungan! Pilih: *serang*, *heal*, atau *kabur*.`);
+              return;
           }
       }
 
@@ -571,13 +610,11 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       
                       ctx.font = `${fontSize}px "Open Sans", "Noto Color Emoji"`;
                       ctx.fillStyle = '#000000';
-                      ctx.textAlign = 'left';
+                      ctx.textAlign = 'center';
                       ctx.textBaseline = 'middle';
                       
-                      // The character is on the right, so we restrict text to the left 60%
-                      const textAreaWidth = targetWidth * 0.60;
-                      const startX = 40; // Absolut kiri
-                      const maxWidth = textAreaWidth - 40;
+                      const paddingX = 40;
+                      const maxWidth = targetWidth - (paddingX * 2);
                       const startYOffset = 120; // Lower a bit for the media player title
                       
                       const paragraphs = text.split('\n');
@@ -603,11 +640,14 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       const totalHeight = lines.length * lineHeight;
                       
                       // Calculate center Y within the white box area
+                      // The white box starts roughly around startYOffset, and ends roughly at targetHeight - 150
                       const whiteBoxHeight = targetHeight - startYOffset - 150;
-                      let startY = startYOffset + (whiteBoxHeight / 2) - (totalHeight / 2) + (lineHeight / 2) - 20; // Shift up a little
+                      let startY = startYOffset + (whiteBoxHeight / 2) - (totalHeight / 2) + (lineHeight / 2);
+                      
+                      const centerX = targetWidth / 2;
                       
                       for (let i = 0; i < lines.length; i++) {
-                          ctx.fillText(lines[i], startX, startY);
+                          ctx.fillText(lines[i], centerX, startY);
                           startY += lineHeight;
                       }
                       
@@ -655,37 +695,6 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   }
                   break;
               }
-
-              case 'tulis':
-              case 'transkrip': {
-                  const target = getTargetMediaMessage();
-                  if (!target || (!target.audioMessage && !target.documentMessage)) return await reply("Silakan balas/reply voice note (VN) atau pesan audio dengan mengetik .tulis");
-                  
-                  try {
-                      await reply("⏳ *Sedang mendengarkan dan mentranskrip audio...*");
-                      const buffer = await downloadMediaMessage(target as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
-                      
-                      const ai = getAI();
-                      const base64Audio = (buffer).toString("base64");
-                      const response = await ai.models.generateContent({
-                          model: "gemini-2.5-flash",
-                          contents: [
-                              {
-                                  role: "user",
-                                  parts: [
-                                      { text: "Tolong tuliskan transkrip dari pesan suara ini secara akurat. Output hanya berupa teks transkrip tanpa tambahan teks lain. Jika bahasa yang diucapkan adalah Indonesia, tulis dalam bahasa Indonesia." },
-                                      { inlineData: { data: base64Audio, mimeType: target.audioMessage?.mimetype || target.documentMessage?.mimetype || 'audio/ogg' } }
-                                  ]
-                              }
-                          ]
-                      });
-                      
-                      await reply(`📝 *Transkrip Audio:*\n\n${response.text}`);
-                  } catch (err) {
-                      await reply(`❌ Gagal mentranskrip: ${err.message}`);
-                  }
-                  break;
-              }
               case 'kuis': {
                   const questions = [
                       { question: "Apa yang sebesar gajah tetapi beratnya 0 kg?", options: ["Bayangan gajah", "Anak gajah", "Balon gajah", "Patung gajah"], answer: "Bayangan gajah" },
@@ -696,14 +705,28 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   const q = questions[Math.floor(Math.random() * questions.length)];
                   activeQuizzes.set(sender, q);
                   
-                  let optText = "";
-                  q.options.forEach((opt, idx) => {
-                      optText += `${String.fromCharCode(65 + idx)}. ${opt}\n`;
+                  const buttons = q.options.map((opt, idx) => ({
+                      name: "quick_reply",
+                      buttonParamsJson: JSON.stringify({ display_text: String.fromCharCode(65 + idx) + ". " + opt, id: opt })
+                  }));
+                  buttons.push({
+                      name: "quick_reply",
+                      buttonParamsJson: JSON.stringify({ display_text: "🏳️ Nyerah", id: "nyerah" })
                   });
                   
-                  const text = `🎯 *GAME KUIS*\n\nSoal: ${q.question}\n\nPilih jawabanmu di bawah:\n${optText}\n🏳️ Ketik *nyerah* jika menyerah.\n(Balas pesan ini dengan jawabanmu!)`;
-                  
-                  await sock.sendMessage(sender, { text }, { quoted: msg });
+                  const msgKuis = generateWAMessageFromContent(sender, {
+                      viewOnceMessage: {
+                          message: {
+                              interactiveMessage: {
+                                  header: { title: "🎯 *GAME KUIS*", hasMediaAttachment: false },
+                                  body: { text: `Soal: ${q.question}\n\nPilih jawabanmu di bawah:` },
+                                  footer: { text: "Nexus AI" },
+                                  nativeFlowMessage: { buttons }
+                              }
+                          }
+                      }
+                  }, { userJid: sock.user?.id });
+                  await sock.relayMessage(sender, msgKuis.message!, { messageId: msgKuis.key.id! });
                   break;
               }
               case 'rpg': {
@@ -718,8 +741,25 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   const monster = monsters[Math.floor(Math.random() * monsters.length)];
                   activeRPG.set(sender, { monsterHp: 100, monster });
                   
-                  const text = `⚠️ *PERTARUNGAN DIMULAI*\n\nSeekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?\n\nKetik perintah berikut:\n⚔️ *.serang*\n🧪 *.heal*\n🏃 *.kabur*`;
-                  await sock.sendMessage(sender, { text }, { quoted: msg });
+                  const msgRPG = generateWAMessageFromContent(sender, {
+                      viewOnceMessage: {
+                          message: {
+                              interactiveMessage: {
+                                  header: { title: "⚠️ *PERTARUNGAN DIMULAI*", hasMediaAttachment: false },
+                                  body: { text: `Seekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?` },
+                                  footer: { text: "Nexus AI RPG" },
+                                  nativeFlowMessage: {
+                                      buttons: [
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚔️ Serang", id: ".serang" }) },
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🧪 Heal", id: ".heal" }) },
+                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🏃 Kabur", id: ".kabur" }) }
+                                      ]
+                                  }
+                              }
+                          }
+                      }
+                  }, { userJid: sock.user?.id });
+                  await sock.relayMessage(sender, msgRPG.message!, { messageId: msgRPG.key.id! });
                   break;
               }
               case 'slot': {
