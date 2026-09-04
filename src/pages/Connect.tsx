@@ -129,7 +129,7 @@ export default function Connect() {
           {/* Left Column: Control Panel */}
           <div className="lg:col-span-1 space-y-6">
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl relative overflow-hidden group">
-              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
               
               <div className="flex items-center gap-3 mb-8">
                 <div className="p-3 bg-purple-500/20 rounded-xl text-purple-400">
@@ -190,15 +190,14 @@ export default function Connect() {
                         type="text" 
                         value={pairingNumber} 
                         onChange={(e) => setPairingNumber(e.target.value.replace(/[^0-9]/g, ''))}
-                        className="w-full bg-black/40 border border-white/10 rounded-xl px-5 py-4 text-white focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all font-mono text-lg placeholder:text-gray-600"
+                        className="w-full relative z-20 bg-black/40 border border-white/10 rounded-xl px-5 py-4 text-white focus:outline-none focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all font-mono text-lg placeholder:text-gray-600"
                         placeholder="628..."
                       />
                     </div>
                   )}
                   <button 
-                    onClick={handleConnect} 
-                    
-                    className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white py-4 rounded-xl font-bold text-base transition-all disabled:opacity-50 disabled:grayscale shadow-lg shadow-purple-500/20"
+                    onClick={handleConnect}
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-xl font-bold text-base transition-colors relative z-50 shadow-md cursor-pointer"
                   >
                     Mulai Tautkan
                   </button>
