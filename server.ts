@@ -655,6 +655,37 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   }
                   break;
               }
+
+              case 'tulis':
+              case 'transkrip': {
+                  const target = getTargetMediaMessage();
+                  if (!target || (!target.audioMessage && !target.documentMessage)) return await reply("Silakan balas/reply voice note (VN) atau pesan audio dengan mengetik .tulis");
+                  
+                  try {
+                      await reply("⏳ *Sedang mendengarkan dan mentranskrip audio...*");
+                      const buffer = await downloadMediaMessage(target as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
+                      
+                      const ai = getAI();
+                      const base64Audio = (buffer).toString("base64");
+                      const response = await ai.models.generateContent({
+                          model: "gemini-2.5-flash",
+                          contents: [
+                              {
+                                  role: "user",
+                                  parts: [
+                                      { text: "Tolong tuliskan transkrip dari pesan suara ini secara akurat. Output hanya berupa teks transkrip tanpa tambahan teks lain. Jika bahasa yang diucapkan adalah Indonesia, tulis dalam bahasa Indonesia." },
+                                      { inlineData: { data: base64Audio, mimeType: target.audioMessage?.mimetype || target.documentMessage?.mimetype || 'audio/ogg' } }
+                                  ]
+                              }
+                          ]
+                      });
+                      
+                      await reply(`📝 *Transkrip Audio:*\n\n${response.text}`);
+                  } catch (err) {
+                      await reply(`❌ Gagal mentranskrip: ${err.message}`);
+                  }
+                  break;
+              }
               case 'kuis': {
                   const questions = [
                       { question: "Apa yang sebesar gajah tetapi beratnya 0 kg?", options: ["Bayangan gajah", "Anak gajah", "Balon gajah", "Patung gajah"], answer: "Bayangan gajah" },
