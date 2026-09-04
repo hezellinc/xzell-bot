@@ -604,17 +604,17 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       
                       const text = payload;
                       
-                      let fontSize = 64;
-                      if (text.length > 20) fontSize = 48;
-                      if (text.length > 50) fontSize = 36;
+                      let fontSize = 72;
+                      if (text.length > 20) fontSize = 56;
+                      if (text.length > 50) fontSize = 42;
                       
                       ctx.font = `${fontSize}px "Open Sans", "Noto Color Emoji"`;
                       ctx.fillStyle = '#000000';
-                      ctx.textAlign = 'center';
+                      ctx.textAlign = 'left';
                       ctx.textBaseline = 'middle';
                       
-                      const paddingX = 40;
-                      const maxWidth = targetWidth - (paddingX * 2);
+                      const startX = 60;
+                      const maxWidth = targetWidth * 0.55; // Membatasi lebar agar tidak menabrak karakter
                       const startYOffset = 120; // Lower a bit for the media player title
                       
                       const paragraphs = text.split('\n');
@@ -636,7 +636,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           lines.push(currentLine.trim());
                       }
                       
-                      const lineHeight = fontSize * 1.2;
+                      const lineHeight = fontSize * 1.3;
                       const totalHeight = lines.length * lineHeight;
                       
                       // Calculate center Y within the white box area
@@ -644,10 +644,8 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       const whiteBoxHeight = targetHeight - startYOffset - 150;
                       let startY = startYOffset + (whiteBoxHeight / 2) - (totalHeight / 2) + (lineHeight / 2);
                       
-                      const centerX = targetWidth / 2;
-                      
                       for (let i = 0; i < lines.length; i++) {
-                          ctx.fillText(lines[i], centerX, startY);
+                          ctx.fillText(lines[i], startX, startY);
                           startY += lineHeight;
                       }
                       
