@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useRef } from 'react';
+const fs = require('fs');
+
+const content = `import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { ShieldCheck, Activity, MessageSquare, Clock, Smartphone, ChevronLeft, Gamepad2, BrainCircuit } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -167,13 +169,13 @@ export default function Connect() {
                   <div className="flex bg-black/40 p-1.5 rounded-xl border border-white/5">
                     <button 
                       onClick={() => setAuthMethod("qr")}
-                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authMethod === 'qr' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                      className={\`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all \${authMethod === 'qr' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}\`}
                     >
                       QR Code
                     </button>
                     <button 
                       onClick={() => setAuthMethod("pairing")}
-                      className={`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all ${authMethod === 'pairing' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}`}
+                      className={\`flex-1 py-2.5 rounded-lg text-sm font-semibold transition-all \${authMethod === 'pairing' ? 'bg-white/10 text-white shadow-sm' : 'text-gray-500 hover:text-gray-300'}\`}
                     >
                       Pairing Code
                     </button>
@@ -253,17 +255,17 @@ export default function Connect() {
                       const isQuiz = log.text.includes('GAME KUIS');
 
                       return (
-                        <div key={idx} className={`flex w-full ${log.direction === "outbound" ? "justify-end" : "justify-start"}`}>
-                          <div className={`max-w-[85%] rounded-3xl px-6 py-4 relative group ${
+                        <div key={idx} className={\`flex w-full \${log.direction === "outbound" ? "justify-end" : "justify-start"}\`}>
+                          <div className={\`max-w-[85%] rounded-3xl px-6 py-4 relative group \${
                             log.direction === "outbound" 
                                ? "bg-gradient-to-br from-purple-600 to-indigo-700 text-white rounded-tr-sm shadow-lg shadow-purple-900/20" 
                                : "bg-white/5 text-gray-200 rounded-tl-sm border border-white/10"
-                          }`}>
+                          }\`}>
                             <div className="flex items-center justify-between gap-6 mb-2">
-                              <span className={`text-xs font-black tracking-wide uppercase ${log.direction === "outbound" ? "text-purple-200" : "text-gray-400"}`}>
+                              <span className={\`text-xs font-black tracking-wide uppercase \${log.direction === "outbound" ? "text-purple-200" : "text-gray-400"}\`}>
                                 {log.direction === "outbound" ? "NEXUS AI" : (log.sender || "User").split('@')[0]}
                               </span>
-                              <span className={`text-[10px] font-mono ${log.direction === "outbound" ? "text-purple-300/70" : "text-gray-500"}`}>
+                              <span className={\`text-[10px] font-mono \${log.direction === "outbound" ? "text-purple-300/70" : "text-gray-500"}\`}>
                                 {new Date(log.timestamp).toLocaleTimeString()}
                               </span>
                             </div>
@@ -299,9 +301,13 @@ function StatusBadge({ status }: { status: BotStatus }) {
   const { label, color } = map[status] || map.disconnected;
   
   return (
-    <div className={`px-3 py-1 rounded-full text-[10px] font-black tracking-widest flex items-center gap-2 border ${color}`}>
+    <div className={\`px-3 py-1 rounded-full text-[10px] font-black tracking-widest flex items-center gap-2 border \${color}\`}>
       {status === "connected" && <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse shadow-[0_0_8px_#4ade80]" />}
       {label}
     </div>
   );
 }
+`
+
+fs.writeFileSync('src/pages/Connect.tsx', content);
+console.log('done Connect rewrite');

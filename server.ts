@@ -7,6 +7,7 @@ import fs from "fs";
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage, getContentType, generateWAMessageFromContent } from "@whiskeysockets/baileys";
 import { Sticker, StickerTypes } from "wa-sticker-formatter";
 import axios from "axios";
+import FormData from "form-data";
 import pino from "pino";
 import QRCode from "qrcode";
 import { initializeApp } from "firebase/app";
@@ -180,6 +181,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
       printQRInTerminal: false,
       logger: pino({ level: 'silent' }) as any,
       browser: ['NexusBot', 'Chrome', '1.0.0'],
+      markOnlineOnConnect: false, // Mencegah server auto-read saat baru konek
     });
 
     if (authMethod === "pairing" && phoneNumber && !sock.authState.creds.registered) {
@@ -224,6 +226,8 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('messages.upsert', async (m: any) => {
+      // Hapus auto-read sock.readMessages jika ada (dapat memblokir RVO)
+
       if (m.type !== 'notify') return;
       const msg = m.messages[0];
       if (!msg.message) return;
@@ -493,10 +497,9 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   if (!target) return await reply("Kirim/reply foto dengan .remove.bg");
                   const buffer = await downloadMediaMessage(target as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
                   
-                  const FormData = require('form-data');
                   const form = new FormData();
                   form.append('size', 'auto');
-                  form.append('image_file', buffer as Buffer, 'image.jpg');
+                  form.append('image_file', buffer as Buffer, { filename: 'image.jpg' });
 
                   const res = await axios.post('https://api.remove.bg/v1.0/removebg', form, {
                       headers: { ...form.getHeaders(), 'X-Api-Key': process.env.REMOVE_BG_API_KEY },
@@ -510,7 +513,30 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   break;
               }
               case 'hd': {
-                  await reply("Fitur penjernih (HD) memerlukan API upscaling (seperti DeepAI). Harap konfigurasikan API key Anda.");
+                  if (!process.env.DEEPAI_API_KEY) return await reply("API Key DeepAI (DEEPAI_API_KEY) belum diatur di .env / variables.");
+                  const target = getTargetMediaMessage();
+                  if (!target) return await reply("Kirim/reply foto dengan .hd");
+                  
+                  await reply("⏳ Sedang memproses gambar menjadi HD, mohon tunggu sebentar...");
+                  try {
+                      const buffer = await downloadMediaMessage(target as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
+                      
+                      const form = new FormData();
+                      form.append('image', buffer as Buffer, { filename: 'image.jpg' });
+
+                      const res = await axios.post('https://api.deepai.org/api/torch-srgan', form, {
+                          headers: { ...form.getHeaders(), 'api-key': process.env.DEEPAI_API_KEY }
+                      });
+                      
+                      if (res.data && res.data.output_url) {
+                          await sock.sendMessage(sender, { image: { url: res.data.output_url }, caption: "✨ Berhasil di-HD-kan!" }, { quoted: msg });
+                      } else {
+                          await reply("Gagal mengupscale gambar.");
+                      }
+                  } catch (err: any) {
+                      console.error("DeepAI Error:", err.response?.data || err.message);
+                      await reply("Maaf, terjadi kesalahan saat menghubungi server DeepAI.");
+                  }
                   break;
               }
               case 'fwindow': {
@@ -545,11 +571,13 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       
                       ctx.font = `${fontSize}px "Open Sans", "Noto Color Emoji"`;
                       ctx.fillStyle = '#000000';
-                      ctx.textAlign = 'center';
+                      ctx.textAlign = 'left';
                       ctx.textBaseline = 'middle';
                       
-                      const paddingX = 40;
-                      const maxWidth = targetWidth - (paddingX * 2);
+                      // The character is on the right, so we restrict text to the left 60%
+                      const textAreaWidth = targetWidth * 0.60;
+                      const startX = 40; // Absolut kiri
+                      const maxWidth = textAreaWidth - 40;
                       const startYOffset = 120; // Lower a bit for the media player title
                       
                       const paragraphs = text.split('\n');
@@ -575,14 +603,11 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       const totalHeight = lines.length * lineHeight;
                       
                       // Calculate center Y within the white box area
-                      // The white box starts roughly around startYOffset, and ends roughly at targetHeight - 150
                       const whiteBoxHeight = targetHeight - startYOffset - 150;
-                      let startY = startYOffset + (whiteBoxHeight / 2) - (totalHeight / 2) + (lineHeight / 2);
-                      
-                      const centerX = targetWidth / 2;
+                      let startY = startYOffset + (whiteBoxHeight / 2) - (totalHeight / 2) + (lineHeight / 2) - 20; // Shift up a little
                       
                       for (let i = 0; i < lines.length; i++) {
-                          ctx.fillText(lines[i], centerX, startY);
+                          ctx.fillText(lines[i], startX, startY);
                           startY += lineHeight;
                       }
                       
@@ -640,28 +665,14 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   const q = questions[Math.floor(Math.random() * questions.length)];
                   activeQuizzes.set(sender, q);
                   
-                  const buttons = q.options.map((opt, idx) => ({
-                      name: "quick_reply",
-                      buttonParamsJson: JSON.stringify({ display_text: String.fromCharCode(65 + idx) + ". " + opt, id: opt })
-                  }));
-                  buttons.push({
-                      name: "quick_reply",
-                      buttonParamsJson: JSON.stringify({ display_text: "🏳️ Nyerah", id: "nyerah" })
+                  let optText = "";
+                  q.options.forEach((opt, idx) => {
+                      optText += `${String.fromCharCode(65 + idx)}. ${opt}\n`;
                   });
                   
-                  const msgKuis = generateWAMessageFromContent(sender, {
-                      viewOnceMessage: {
-                          message: {
-                              interactiveMessage: {
-                                  header: { title: "🎯 *GAME KUIS*", hasMediaAttachment: false },
-                                  body: { text: `Soal: ${q.question}\n\nPilih jawabanmu di bawah:` },
-                                  footer: { text: "Nexus AI" },
-                                  nativeFlowMessage: { buttons }
-                              }
-                          }
-                      }
-                  }, { userJid: sock.user?.id });
-                  await sock.relayMessage(sender, msgKuis.message!, { messageId: msgKuis.key.id! });
+                  const text = `🎯 *GAME KUIS*\n\nSoal: ${q.question}\n\nPilih jawabanmu di bawah:\n${optText}\n🏳️ Ketik *nyerah* jika menyerah.\n(Balas pesan ini dengan jawabanmu!)`;
+                  
+                  await sock.sendMessage(sender, { text }, { quoted: msg });
                   break;
               }
               case 'rpg': {
@@ -676,25 +687,8 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   const monster = monsters[Math.floor(Math.random() * monsters.length)];
                   activeRPG.set(sender, { monsterHp: 100, monster });
                   
-                  const msgRPG = generateWAMessageFromContent(sender, {
-                      viewOnceMessage: {
-                          message: {
-                              interactiveMessage: {
-                                  header: { title: "⚠️ *PERTARUNGAN DIMULAI*", hasMediaAttachment: false },
-                                  body: { text: `Seekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?` },
-                                  footer: { text: "Nexus AI RPG" },
-                                  nativeFlowMessage: {
-                                      buttons: [
-                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "⚔️ Serang", id: ".serang" }) },
-                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🧪 Heal", id: ".heal" }) },
-                                          { name: "quick_reply", buttonParamsJson: JSON.stringify({ display_text: "🏃 Kabur", id: ".kabur" }) }
-                                      ]
-                                  }
-                              }
-                          }
-                      }
-                  }, { userJid: sock.user?.id });
-                  await sock.relayMessage(sender, msgRPG.message!, { messageId: msgRPG.key.id! });
+                  const text = `⚠️ *PERTARUNGAN DIMULAI*\n\nSeekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?\n\nKetik perintah berikut:\n⚔️ *.serang*\n🧪 *.heal*\n🏃 *.kabur*`;
+                  await sock.sendMessage(sender, { text }, { quoted: msg });
                   break;
               }
               case 'slot': {
@@ -740,15 +734,32 @@ Ketik *.rpg* untuk mulai berpetualang!`;
               case 'rvo': {
                   if (!isQuotedMedia) return await reply("Reply pesan 1x lihat (view once) dengan .rvo");
                   const quotedMsg = msg.message.extendedTextMessage?.contextInfo?.quotedMessage;
-                  const viewOnce = quotedMsg?.viewOnceMessageV2?.message || quotedMsg?.viewOnceMessage?.message;
+                  
+                  // Mendukung berbagai versi View Once (v1, v2, v2Extension)
+                  const viewOnce = quotedMsg?.viewOnceMessageV2Extension?.message || quotedMsg?.viewOnceMessageV2?.message || quotedMsg?.viewOnceMessage?.message;
                   if (!viewOnce) return await reply("Pesan yang di-reply bukan view once.");
                   
                   const isImage = !!viewOnce.imageMessage;
-                  const buffer = await downloadMediaMessage({ message: viewOnce } as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
-                  if (isImage) {
-                      await sock.sendMessage(sender, { image: buffer as Buffer, caption: viewOnce.imageMessage?.caption || "" }, { quoted: msg });
-                  } else {
-                      await sock.sendMessage(sender, { video: buffer as Buffer, caption: viewOnce.videoMessage?.caption || "" }, { quoted: msg });
+                  try {
+                      // Gunakan objek pesan asli untuk meminimalkan error pemblokiran
+                      const mediaMessage = {
+                          key: msg.message.extendedTextMessage?.contextInfo?.stanzaId ? {
+                              remoteJid: msg.key.remoteJid,
+                              id: msg.message.extendedTextMessage.contextInfo.stanzaId,
+                              participant: msg.message.extendedTextMessage.contextInfo.participant
+                          } : msg.key,
+                          message: viewOnce
+                      };
+                      
+                      const buffer = await downloadMediaMessage(mediaMessage as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
+                      if (isImage) {
+                          await sock.sendMessage(sender, { image: buffer as Buffer, caption: viewOnce.imageMessage?.caption || "" }, { quoted: msg });
+                      } else {
+                          await sock.sendMessage(sender, { video: buffer as Buffer, caption: viewOnce.videoMessage?.caption || "" }, { quoted: msg });
+                      }
+                  } catch (e: any) {
+                      console.error("RVO Error:", e);
+                      await reply("Gagal mendownload media. WhatsApp mungkin telah memblokir unduhan ini (sudah terbuka) atau pesan terlalu lama.");
                   }
                   break;
               }
@@ -802,7 +813,7 @@ async function processWithGemini(text: string, senderId: string): Promise<string
   ];
 
   const chat = getAI().chats.create({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.5-flash",
     config: {
       systemInstruction: "You are a helpful, intelligent WhatsApp AI bot. You can search the web, calculate math expressions, and schedule events. Keep your answers concise, friendly, and formatted nicely for WhatsApp.",
       tools: tools

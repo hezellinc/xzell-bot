@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+const fs = require('fs');
+
+const content = `import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Bot, Sparkles, MessageSquare, Gamepad2, ImageIcon, Shield, ChevronDown, Mail, ArrowRight, CheckCircle2, Zap } from 'lucide-react';
 import SideRays from '../components/SideRays';
@@ -23,7 +25,7 @@ export default function Landing() {
       <div className="absolute bottom-[20%] left-[-10%] w-[30%] h-[40%] bg-cyan-600/10 blur-[120px] rounded-full pointer-events-none" />
 
       {/* Navigation */}
-      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-black/60 backdrop-blur-xl border-b border-white/10 py-4' : 'bg-transparent py-6'}`}>
+      <nav className={\`fixed top-0 left-0 right-0 z-50 transition-all duration-300 \${scrolled ? 'bg-black/60 backdrop-blur-xl border-b border-white/10 py-4' : 'bg-transparent py-6'}\`}>
         <div className="w-full max-w-7xl mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-purple-600 to-blue-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
@@ -278,7 +280,7 @@ export default function Landing() {
 function FeatureCard({ icon, title, desc, color, bg, border }: { icon: React.ReactNode, title: string, desc: string, color: string, bg: string, border: string }) {
   return (
     <div className="bg-white/5 border border-white/5 backdrop-blur-sm p-8 rounded-[2rem] hover:bg-white/10 transition-all duration-300 group cursor-default shadow-lg hover:shadow-xl hover:-translate-y-1">
-      <div className={`w-14 h-14 ${bg} ${border} border rounded-2xl flex items-center justify-center ${color} mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm`}>
+      <div className={\`w-14 h-14 \${bg} \${border} border rounded-2xl flex items-center justify-center \${color} mb-6 group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300 shadow-sm\`}>
         {React.cloneElement(icon as React.ReactElement, { className: "w-7 h-7" })}
       </div>
       <h3 className="text-xl font-bold text-white mb-3 tracking-tight">{title}</h3>
@@ -297,10 +299,10 @@ function FaqItem({ q, a }: { q: string, a: string }) {
         className="w-full flex items-center justify-between p-6 md:p-8 text-left focus:outline-none"
       >
         <span className="font-bold text-white text-lg">{q}</span>
-        <ChevronDown className={`w-6 h-6 text-gray-400 transition-transform duration-300 ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={\`w-6 h-6 text-gray-400 transition-transform duration-300 \${open ? 'rotate-180' : ''}\`} />
       </button>
       <div 
-        className={`px-6 md:px-8 overflow-hidden transition-all duration-500 ease-in-out ${open ? 'max-h-60 pb-8 opacity-100' : 'max-h-0 opacity-0'}`}
+        className={\`px-6 md:px-8 overflow-hidden transition-all duration-500 ease-in-out \${open ? 'max-h-60 pb-8 opacity-100' : 'max-h-0 opacity-0'}\`}
       >
         <p className="text-gray-400 text-base leading-relaxed pt-4 border-t border-white/5">
           {a}
@@ -309,3 +311,7 @@ function FaqItem({ q, a }: { q: string, a: string }) {
     </div>
   );
 }
+`
+
+fs.writeFileSync('src/pages/Landing.tsx', content);
+console.log('done attractive rewrite');
