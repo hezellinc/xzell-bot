@@ -86,6 +86,39 @@ async function startServer() {
 
   app.use(express.json());
 
+  // === MaxRouter Chat Proxy ===
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const { messages } = req.body;
+      const apiKey = process.env.MAXROUTER_API_KEY;
+      
+      if (!apiKey) {
+        return res.status(401).json({ error: "MAXROUTER_API_KEY is not configured on the server." });
+      }
+
+      // MaxRouter endpoint and model based on user request
+      const response = await axios.post(
+        "https://maxrouter.io/llm-api/chat/completions",
+        {
+          model: "deepseek-v3.2",
+          messages: messages,
+          temperature: 0.7
+        },
+        {
+          headers: {
+            "Authorization": `Bearer ${apiKey}`,
+            "Content-Type": "application/json"
+          }
+        }
+      );
+
+      res.json(response.data);
+    } catch (error: any) {
+      console.error("MaxRouter API Error:", error.response?.data || error.message);
+      res.status(500).json({ error: error.response?.data || error.message });
+    }
+  });
+
   // === Anti-Sleep Keep-Alive Endpoint ===
   app.get("/api/keepalive", (req, res) => {
     res.json({ status: "alive", timestamp: Date.now() });
@@ -668,7 +701,22 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       const res = await axios.get(`https://api.deezer.com/search?q=${encodeURIComponent(payload)}`);
                       const track = res.data.data[0];
                       if (track && track.preview) {
-                          await sock.sendMessage(sender, { audio: { url: track.preview }, mimetype: 'audio/mp4' }, { quoted: msg });
+                          // Menggunakan Native Rich Player WA (Large Thumbnail)
+                          await sock.sendMessage(sender, { 
+                              audio: { url: track.preview }, 
+                              mimetype: 'audio/mp4',
+                              ptt: false,
+                              contextInfo: {
+                                  externalAdReply: {
+                                      title: track.title,
+                                      body: `Artist: ${track.artist.name} • Album: ${track.album.title}`,
+                                      thumbnailUrl: track.album.cover_xl || track.album.cover_medium,
+                                      sourceUrl: track.link,
+                                      mediaType: 1,
+                                      renderLargerThumbnail: true
+                                  }
+                              }
+                          }, { quoted: msg });
                       } else {
                           await reply("Lagu tidak ditemukan atau tidak ada preview.");
                       }

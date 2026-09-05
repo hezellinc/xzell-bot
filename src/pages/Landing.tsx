@@ -72,6 +72,12 @@ export default function Landing() {
           >
             Mulai Sekarang Gratis
           </Link>
+          <Link 
+            to="/chat" 
+            className="bg-gradient-to-r from-blue-600 to-cyan-500 text-white px-8 py-4 rounded-full font-bold text-base hover:opacity-90 transition-all shadow-[0_0_40px_-10px_rgba(59,130,246,0.5)]"
+          >
+            Coba MaxRouter AI
+          </Link>
           <a 
             href="#features" 
             className="glass-panel text-white px-8 py-4 rounded-full font-semibold text-base hover:bg-white/10 transition-colors"
