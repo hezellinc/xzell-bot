@@ -1,0 +1,11 @@
+const { createCanvas, GlobalFonts } = require('@napi-rs/canvas');
+const fs = require('fs');
+GlobalFonts.registerFromPath('assets/NotoColorEmoji.ttf', 'Noto Color Emoji');
+const canvas = createCanvas(400, 200);
+const ctx = canvas.getContext('2d');
+ctx.fillStyle = 'black';
+ctx.fillRect(0,0,400,200);
+ctx.font = '50px "Noto Color Emoji"';
+ctx.fillText('👍 ❤️ 😂', 50, 100);
+fs.writeFileSync('test-emoji.png', canvas.toBuffer('image/png'));
+console.log("Size:", fs.statSync('test-emoji.png').size);

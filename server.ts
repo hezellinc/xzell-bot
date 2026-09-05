@@ -452,7 +452,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
 
 ┏━━ ✦ *FITUR BOT* ✦
 ┣ ⊳ .bratgif [teks]
-┣ ⊳ .fwindow [teks]
+┣ ⊳ .ffqic set[1-5] [nama]\n┣ ⊳ .fwindow [teks]\n┣ ⊳ .iqc [teks]
 ┣ ⊳ .meme [teks] atau [atas | bawah]
 ┣ ⊳ .remove.bg (reply foto)
 ┣ ⊳ .spoplay [judul lagu]
@@ -746,9 +746,13 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   if (!nameText) return await reply("Teks nama tidak boleh kosong.");
                   
                   try {
-                      const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+                      const { createCanvas, loadImage, GlobalFonts } = await import('@napi-rs/canvas');
                       const path = await import('path');
                       const fs = await import('fs');
+                      
+                      if (!GlobalFonts.has("MySansBold")) {
+                          GlobalFonts.registerFromPath('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf', 'MySansBold');
+                      }
                       
                       const assetPath = path.join(process.cwd(), 'assets', `${setMatch}.jpeg`);
                       if (!fs.existsSync(assetPath)) return await reply(`Maaf, template ${setMatch} belum tersedia.`);
@@ -762,7 +766,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       ctx.fillStyle = '#FFE9A6'; // Warna kuning pucat
                       
                       let fontSize = 28;
-                      ctx.font = `bold ${fontSize}px sans-serif`;
+                      ctx.font = `${fontSize}px MySansBold`;
                       ctx.textAlign = 'center';
                       ctx.textBaseline = 'middle';
                       
@@ -799,7 +803,11 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               case 'iqc': {
                   if (!payload) return await reply("Ketik teks untuk pesan iqc.");
                   try {
-                      const { createCanvas } = await import('@napi-rs/canvas');
+                      const { createCanvas, GlobalFonts } = await import('@napi-rs/canvas');
+                      if (!GlobalFonts.has("MySansRegular")) {
+                          GlobalFonts.registerFromPath('/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf', 'MySansRegular');
+                          GlobalFonts.registerFromPath(process.cwd() + '/assets/NotoColorEmoji.ttf', 'Noto Color Emoji');
+                      }
                       const width = 1080;
                       const height = 1920;
                       const canvas = createCanvas(width, height);
@@ -819,7 +827,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       const date = new Date();
                       const timeText = `${date.getHours().toString().padStart(2, '0')}.${date.getMinutes().toString().padStart(2, '0')}`;
 
-                      ctx.font = '40px sans-serif';
+                      ctx.font = '40px MySansRegular';
                       const words = msgText.split(' ');
                       let lines = [];
                       let currentLine = '';
@@ -837,11 +845,11 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       }
                       lines.push(currentLine.trim());
 
-                      ctx.font = '28px sans-serif';
+                      ctx.font = '28px MySansRegular';
                       const timeWidth = ctx.measureText(timeText).width;
 
                       let longestLineW = 0;
-                      ctx.font = '40px sans-serif';
+                      ctx.font = '40px MySansRegular';
                       lines.forEach(l => {
                           let w = ctx.measureText(l).width;
                           if(w > longestLineW) longestLineW = w;
@@ -868,13 +876,13 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
 
                       drawRoundRect(bubbleX, startY, bubbleWidth, bubbleHeight, 25, '#1F2023');
                       ctx.fillStyle = 'white';
-                      ctx.font = '40px sans-serif';
+                      ctx.font = '40px MySansRegular';
                       lines.forEach((l, i) => {
                           ctx.fillText(l, bubbleX + 20, startY + 50 + (i * lineHeight));
                       });
 
                       ctx.fillStyle = '#7E7F83';
-                      ctx.font = '28px sans-serif';
+                      ctx.font = '28px MySansRegular';
                       ctx.fillText(timeText, bubbleX + bubbleWidth - timeWidth - 20, startY + bubbleHeight - 15);
 
                       const menuWidth = 500;
@@ -896,7 +904,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           const y = menuY + (index * itemHeight);
                           
                           ctx.fillStyle = item.color || 'white';
-                          ctx.font = '35px sans-serif';
+                          ctx.font = '35px MySansRegular';
                           ctx.fillText(item.text, bubbleX + 40, y + 55);
                           
                           ctx.font = '35px "Noto Color Emoji"';
@@ -925,9 +933,13 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       const text = payload.replace(/^video\s+/i, '');
                       const words = text.split(' ');
                       const { spawn } = await import('child_process');
-                      const { createCanvas } = await import('@napi-rs/canvas');
+                      const { createCanvas, GlobalFonts } = await import('@napi-rs/canvas');
                       const path = await import('path');
                       const fs = await import('fs');
+                      
+                      if (!GlobalFonts.has("MySansBold")) {
+                          GlobalFonts.registerFromPath('/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf', 'MySansBold');
+                      }
 
                       const width = 512;
                       const height = 512;
@@ -971,7 +983,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                               ctx.filter = 'blur(2px)';
                               
                               let fontSize = 120;
-                              ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+                              ctx.font = `${fontSize}px MySansBold`;
                               
                               let maxW = 0;
                               for(let w of currentWords) {
