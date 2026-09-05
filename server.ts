@@ -450,44 +450,26 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
 ┃ 🤖 Status: Aktif
 ╰━━━━━━━━━━━━━━━━━━━━
 
-┏━━ ✦ *AI & CHAT* ✦
-┣ ⊳ .ai [pertanyaan]
-┣ ⊳ .chat / .ask
-┗━━━━━━━━━━━━━━━
-
-┏━━ ✦ *MEDIA & STIKER* ✦
-┣ ⊳ .sticker (reply foto/video)
-┣ ⊳ .brat [teks]
+┏━━ ✦ *FITUR BOT* ✦
+┣ ⊳ .bratgif [teks]
 ┣ ⊳ .fwindow [teks]
-┣ ⊳ .iqc [teks]
-┗━━━━━━━━━━━━━━━
-
-┏━━ ✦ *DOWNLOAD & AUDIO* ✦
-┣ ⊳ .ytplay [judul lagu]
-┣ ⊳ .spoplay [judul lagu]
-┣ ⊳ .tiktok [link video]
-┗━━━━━━━━━━━━━━━
-
-┏━━ ✦ *AI EDITOR (PRO)* ✦
+┣ ⊳ .meme [teks] atau [atas | bawah]
 ┣ ⊳ .remove.bg (reply foto)
-┣ ⊳ .hd (reply foto)
-┣ ⊳ .aiedit [prompt]
-┗━━━━━━━━━━━━━━━
-
-┏━━ ✦ *GAMES & RPG* ✦
-┣ ⊳ .rpg (berburu monster)
-┣ ⊳ .profil (cek status hero)
-┣ ⊳ .slot (spin dapet uang)
-┣ ⊳ .kuis (tebak-tebakan)
-┗━━━━━━━━━━━━━━━
-
-┏━━ ✦ *UTILITY* ✦
-┣ ⊳ .rvo (buka 1x lihat)
-┣ ⊳ .menu (tampilkan menu)
+┣ ⊳ .spoplay [judul lagu]
+┣ ⊳ .ytplay [judul lagu]
+┣ ⊳ .sticker (reply foto/video)
 ┗━━━━━━━━━━━━━━━
 
 💡 *Tips:* Jangan lupa gunakan tanda titik (.) sebelum perintah!`;
-                  await reply(menuText);
+                  try {
+                      if (fs.existsSync('./thumbnail.menu.jpg')) {
+                          await sock.sendMessage(sender, { image: fs.readFileSync('./thumbnail.menu.jpg'), caption: menuText }, { quoted: msg });
+                      } else {
+                          await reply(menuText);
+                      }
+                  } catch (e) {
+                      await reply(menuText);
+                  }
                   break;
               }
               case 'sticker': {
@@ -496,6 +478,66 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   const buffer = await downloadMediaMessage(target as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
                   const sticker = new Sticker(buffer as Buffer, { pack: 'Nexus AI', author: 'Bot', type: StickerTypes.FULL });
                   await sock.sendMessage(sender, await sticker.toMessage(), { quoted: msg });
+                  break;
+              }
+              case 'meme': {
+                  const target = getTargetMediaMessage();
+                  if (!target || !payload) return await reply("Kirim/reply foto dengan perintah .meme [teks atas] | [teks bawah]");
+                  try {
+                      let topText = payload;
+                      let bottomText = "";
+                      if (payload.includes("|")) {
+                          const parts = payload.split("|");
+                          topText = parts[0].trim();
+                          bottomText = parts[1].trim();
+                      }
+                      const buffer = await downloadMediaMessage(target as any, 'buffer', {}, { logger: pino({ level: 'silent' }) as any, reuploadRequest: sock.updateMediaMessage });
+                      
+                      const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+                      const img = await loadImage(buffer as Buffer);
+                      const canvas = createCanvas(img.width, img.height);
+                      const ctx = canvas.getContext('2d');
+                      ctx.drawImage(img, 0, 0);
+                      
+                      const fontSize = Math.max(20, Math.floor(img.height / 10));
+                      ctx.font = `bold ${fontSize}px Impact, sans-serif`;
+                      ctx.fillStyle = 'white';
+                      ctx.strokeStyle = 'black';
+                      ctx.lineWidth = Math.max(2, Math.floor(fontSize / 10));
+                      ctx.textAlign = 'center';
+                      ctx.lineJoin = 'round';
+                      
+                      const drawMemeText = (text: string, x: number, y: number) => {
+                          const lines = text.split('\\n');
+                          lines.forEach((line, i) => {
+                              const yPos = y + (i * fontSize * 1.2);
+                              ctx.strokeText(line, x, yPos);
+                              ctx.fillText(line, x, yPos);
+                          });
+                      };
+                      
+                      if (topText) {
+                          ctx.textBaseline = 'top';
+                          drawMemeText(topText.toUpperCase(), img.width / 2, 10);
+                      }
+                      if (bottomText) {
+                          ctx.textBaseline = 'bottom';
+                          drawMemeText(bottomText.toUpperCase(), img.width / 2, img.height - 10 - (bottomText.split('\\n').length - 1) * (fontSize * 1.2));
+                      }
+                      
+                      const memeBuffer = await canvas.encode('png');
+                      const sticker = new Sticker(memeBuffer, {
+                          pack: "NEXUS MEME",
+                          author: "Sallverapedia",
+                          type: StickerTypes.FULL,
+                          quality: 50,
+                      });
+                      const stickerBuffer = await sticker.toBuffer();
+                      await sock.sendMessage(sender, { sticker: stickerBuffer }, { quoted: msg });
+                  } catch (e) {
+                      console.error("Meme error:", e);
+                      await reply("Gagal membuat meme stiker. Pastikan reply foto.");
+                  }
                   break;
               }
               case 'brat':
