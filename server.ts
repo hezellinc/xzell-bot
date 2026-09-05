@@ -301,16 +301,25 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               const user = await getUserProfile(sender);
               const reward = Math.floor(Math.random() * 50) + 50;
               await updateUserProfile(sender, { balance: user.balance + reward });
-              await reply(`🎉 *Selamat Jawaban Kamu Benar*\n\nJawaban: ${quiz!.answer}\nBalance: $${user.balance + reward}\n\nIngin main lagi? Kirim perintah .kuis`);
+              await reply(`🎉 *Selamat Jawaban Kamu Benar*
+
+Jawaban: ${quiz!.answer}
+Balance: $${user.balance + reward}
+
+Ingin main lagi? Kirim perintah .kuis`);
               return;
           } else if (text.toLowerCase() === 'nyerah' || text.toLowerCase() === '.nyerah') {
               activeQuizzes.delete(sender);
-              await reply(`🏳️ Kamu menyerah.\nJawaban yang benar adalah: ${quiz!.answer}`);
+              await reply(`🏳️ Kamu menyerah.
+Jawaban yang benar adalah: ${quiz!.answer}`);
               return;
           } else if (text.startsWith('.') && text.length > 2 && text !== '.nyerah') {
               activeQuizzes.delete(sender); // abandon quiz on new command
           } else {
-              await reply(`❌ Salah! Coba lagi.\nPertanyaan: ${quiz!.question}\n\nPilih / ketik jawaban yang benar!`);
+              await reply(`❌ Salah! Coba lagi.
+Pertanyaan: ${quiz!.question}
+
+Pilih / ketik jawaban yang benar!`);
               return;
           }
       }
@@ -331,7 +340,10 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   const xpReward = Math.floor(Math.random() * 50) + 20;
                   await updateUserProfile(sender, { balance: user.balance + reward, xp: user.xp + xpReward });
                   activeRPG.delete(sender);
-                  await reply(`⚔️ *CRITICAL HIT!* Kamu menyerang ${state.monster} sebesar ${dmg} DMG!\n\n💀 ${state.monster} telah dikalahkan!\n🎉 Kamu mendapat *$${reward}* dan ${xpReward} XP!`);
+                  await reply(`⚔️ *CRITICAL HIT!* Kamu menyerang ${state.monster} sebesar ${dmg} DMG!
+
+💀 ${state.monster} telah dikalahkan!
+🎉 Kamu mendapat *$${reward}* dan ${xpReward} XP!`);
                   return;
               }
               
@@ -339,7 +351,9 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               if (user.hp <= 0) {
                   await updateUserProfile(sender, { hp: user.maxHp });
                   activeRPG.delete(sender);
-                  await reply(`⚔️ Kamu menyerang sebesar ${dmg} DMG, tapi ${state.monster} membalas dengan ganas sebesar ${mDmg} DMG!\n\n☠️ *KAMU MATI!* Perjalananmu berakhir di sini... HP kamu telah dipulihkan di kota.`);
+                  await reply(`⚔️ Kamu menyerang sebesar ${dmg} DMG, tapi ${state.monster} membalas dengan ganas sebesar ${mDmg} DMG!
+
+☠️ *KAMU MATI!* Perjalananmu berakhir di sini... HP kamu telah dipulihkan di kota.`);
                   return;
               }
               
@@ -350,7 +364,13 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       message: {
                           interactiveMessage: {
                               header: { title: "⚠️ *PERTARUNGAN BERLANJUT*", hasMediaAttachment: false },
-                              body: { text: `⚔️ Kamu menyerang sebesar ${dmg} DMG!\n${state.monster} membalas sebesar ${mDmg} DMG!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nApa langkahmu selanjutnya?` },
+                              body: { text: `⚔️ Kamu menyerang sebesar ${dmg} DMG!
+${state.monster} membalas sebesar ${mDmg} DMG!
+
+❤️ HP Kamu: ${user.hp}/${user.maxHp}
+🖤 HP ${state.monster}: ${state.monsterHp}
+
+Apa langkahmu selanjutnya?` },
                               footer: { text: "Nexus AI RPG" },
                               nativeFlowMessage: {
                                   buttons: [
@@ -377,7 +397,12 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           message: {
                               interactiveMessage: {
                                   header: { title: "✨ *HEALING*", hasMediaAttachment: false },
-                                  body: { text: `Kamu meminum Potion (Sisa: ${user.inventory.potion}). HP kamu pulih +${healAmount}!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${state.monster}: ${state.monsterHp}\n\nLanjutkan serangan?` },
+                                  body: { text: `Kamu meminum Potion (Sisa: ${user.inventory.potion}). HP kamu pulih +${healAmount}!
+
+❤️ HP Kamu: ${user.hp}/${user.maxHp}
+🖤 HP ${state.monster}: ${state.monsterHp}
+
+Lanjutkan serangan?` },
                                   footer: { text: "Nexus AI RPG" },
                                   nativeFlowMessage: {
                                       buttons: [
@@ -445,22 +470,27 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               }
               case 'menu':
               case 'help': {
-                  const menuText = `╭━━━〔 *NEXUS BOT* 〕━━━
-┃ 👋 Halo, Selamat Datang!
-┃ 🤖 Status: Aktif
-╰━━━━━━━━━━━━━━━━━━━━
+                  const menuText = `*Founder & Developer*
 
-┏━━ ✦ *FITUR BOT* ✦
-┣ ⊳ .bratgif [teks]
-┣ ⊳ .ffqic set[1-5] [nama]\n┣ ⊳ .fwindow [teks]\n┣ ⊳ .iqc [teks]
-┣ ⊳ .meme [teks] atau [atas | bawah]
-┣ ⊳ .remove.bg (reply foto)
-┣ ⊳ .spoplay [judul lagu]
-┣ ⊳ .ytplay [judul lagu]
-┣ ⊳ .sticker (reply foto/video)
-┗━━━━━━━━━━━━━━━
+Nama : SallveraPedia
+Instagram : @sallvera
+Secc Instagram : @sallvera.pedia
+Nama Bot : Nexaverabot
+Admin 1 : +6287729044780
+Admin 2 : +6287736052133
 
-💡 *Tips:* Jangan lupa gunakan tanda titik (.) sebelum perintah!`;
+*Fitur :*
+.spoplay ( generator preview musik )
+.iqc ( generator chat wa bubble )
+.ffqic ( generator lobby FF )
+.remove.bg ( hapus latar belakang )
+.sticker ( reply pembuat stiker )
+.bratgif ( pembuat stiker teks latar putih font iphone teks hitam posisi di samping )
+.meme ( reply pembuat meme teks atas | teks bawah )
+.bratvid ( animasi teks stiker latar putih teks hitam font iphone )
+.fwindow ( pembuat teks bergaya UI Windows Media Player )
+
+💡 *Catatan:* Jangan lupa sertakan tanda titik (.) sebelum menggunakan fitur di atas ya!`;
                   try {
                       if (fs.existsSync('./thumbnail.menu.jpg')) {
                           await sock.sendMessage(sender, { image: fs.readFileSync('./thumbnail.menu.jpg'), caption: menuText }, { quoted: msg });
@@ -1188,7 +1218,9 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       const videoUrl = res.data?.data?.play;
                       const title = res.data?.data?.title || "TikTok Video";
                       if (videoUrl) {
-                          await sock.sendMessage(sender, { video: { url: videoUrl }, caption: `${title}\n\n*Downloaded via NexusBot*` }, { quoted: msg });
+                          await sock.sendMessage(sender, { video: { url: videoUrl }, caption: `${title}
+
+*Downloaded via NexusBot*` }, { quoted: msg });
                       } else {
                           await reply("Gagal mengunduh video tiktok.");
                       }
@@ -1221,7 +1253,9 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           message: {
                               interactiveMessage: {
                                   header: { title: "🎯 *GAME KUIS*", hasMediaAttachment: false },
-                                  body: { text: `Soal: ${q.question}\n\nPilih jawabanmu di bawah:` },
+                                  body: { text: `Soal: ${q.question}
+
+Pilih jawabanmu di bawah:` },
                                   footer: { text: "Nexus AI" },
                                   nativeFlowMessage: { buttons }
                               }
@@ -1248,7 +1282,12 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           message: {
                               interactiveMessage: {
                                   header: { title: "⚠️ *PERTARUNGAN DIMULAI*", hasMediaAttachment: false },
-                                  body: { text: `Seekor ${monster} tiba-tiba muncul di hadapanmu!\n\n❤️ HP Kamu: ${user.hp}/${user.maxHp}\n🖤 HP ${monster}: 100\n\nApa yang akan kamu lakukan?` },
+                                  body: { text: `Seekor ${monster} tiba-tiba muncul di hadapanmu!
+
+❤️ HP Kamu: ${user.hp}/${user.maxHp}
+🖤 HP ${monster}: 100
+
+Apa yang akan kamu lakukan?` },
                                   footer: { text: "Nexus AI RPG" },
                                   nativeFlowMessage: {
                                       buttons: [
@@ -1267,14 +1306,21 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               case 'slot': {
                   const cost = 20;
                   const user = await getUserProfile(sender);
-                  if (user.balance < cost) return await reply(`❌ Uangmu tidak cukup! Biaya main slot adalah $${cost}.\nUangmu saat ini: $${user.balance}\n\nKetik *.rpg* atau *.kuis* untuk mencari uang.`);
+                  if (user.balance < cost) return await reply(`❌ Uangmu tidak cukup! Biaya main slot adalah $${cost}.
+Uangmu saat ini: $${user.balance}
+
+Ketik *.rpg* atau *.kuis* untuk mencari uang.`);
                   
                   const emojis = ["🍎", "🍇", "💎", "7️⃣", "🍒"];
                   const s1 = emojis[Math.floor(Math.random() * emojis.length)];
                   const s2 = emojis[Math.floor(Math.random() * emojis.length)];
                   const s3 = emojis[Math.floor(Math.random() * emojis.length)];
                   
-                  let result = `🎰 *SLOT MACHINE* 🎰\n\n[ ${s1} | ${s2} | ${s3} ]\n\n`;
+                  let result = `🎰 *SLOT MACHINE* 🎰
+
+[ ${s1} | ${s2} | ${s3} ]
+
+`;
                   let newBalance = user.balance - cost;
                   if (s1 === s2 && s2 === s3) {
                       newBalance += 500;
@@ -1283,7 +1329,8 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       result += `❌ *Kalah!* Coba lagi boss.`;
                   }
                   await updateUserProfile(sender, { balance: newBalance });
-                  await reply(result + `\n💰 Uangmu sekarang: $${newBalance}`);
+                  await reply(result + `
+💰 Uangmu sekarang: $${newBalance}`);
                   break;
               }
               case 'profil':
