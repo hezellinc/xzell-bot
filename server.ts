@@ -739,27 +739,32 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               case 'ytplay':
               case 'spoplay': {
                   if (!payload) return await reply("Ketik judul lagu yang dicari.");
-                  await reply("Memproses lagu dan membuat video UI Spotify... Mohon tunggu (estimasi 10-20 detik).");
+                  await reply("Memproses lagu dan membuat video UI Spotify... Mohon tunggu (estimasi 5-10 detik).");
                   try {
-                      const res = await axios.get(`https://api.deezer.com/search?q=${encodeURIComponent(payload)}`);
-                      const track = res.data.data[0];
-                      if (track && track.preview) {
+                      const res = await axios.get(`https://itunes.apple.com/search?term=${encodeURIComponent(payload)}&entity=song&limit=1`);
+                      const track = res.data.results[0];
+                      if (track && track.previewUrl) {
                           const { spawn } = await import('child_process');
                           const { createCanvas, loadImage } = await import('@napi-rs/canvas');
                           const path = await import('path');
+                          
+                          // Download audio to temp file first to prevent ffmpeg network errors
+                          const audioRes = await axios.get(track.previewUrl, { responseType: 'arraybuffer' });
+                          const audioPath = path.join(process.cwd(), `temp_audio_${Date.now()}.m4a`);
+                          fs.writeFileSync(audioPath, audioRes.data);
                           
                           const width = 540;
                           const height = 960;
                           const canvas = createCanvas(width, height);
                           const ctx = canvas.getContext('2d');
                           const fps = 15;
-                          const duration = 30; // Deezer previews are 30s
+                          const duration = 30; // iTunes previews are 30s
                           const totalFrames = fps * duration;
 
                           // Load Cover
                           let coverImg;
                           try {
-                              const coverUrl = track.album.cover_xl || track.album.cover_medium;
+                              const coverUrl = track.artworkUrl100.replace('100x100bb', '600x600bb');
                               coverImg = await loadImage(coverUrl);
                           } catch (e) {
                               // fallback empty
@@ -786,14 +791,14 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           ctx.fillStyle = 'white';
                           ctx.font = 'bold 36px sans-serif';
                           ctx.textAlign = 'left';
-                          let displayTitle = track.title;
+                          let displayTitle = track.trackName;
                           if (displayTitle.length > 22) displayTitle = displayTitle.substring(0, 20) + '...';
                           ctx.fillText(displayTitle, 50, 600);
 
                           // Artist
                           ctx.fillStyle = '#b3b3b3';
                           ctx.font = '24px sans-serif';
-                          let displayArtist = track.artist.name;
+                          let displayArtist = track.artistName;
                           if (displayArtist.length > 30) displayArtist = displayArtist.substring(0, 28) + '...';
                           ctx.fillText(displayArtist, 50, 640);
 
@@ -822,7 +827,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           const ffmpeg = spawn('ffmpeg', [
                               '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo',
                               '-s', `${width}x${height}`, '-pix_fmt', 'rgba', '-r', `${fps}`,
-                              '-i', '-', '-i', track.preview,
+                              '-i', '-', '-i', audioPath,
                               '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
                               '-c:a', 'aac', '-t', `${duration}`,
                               tempVideoPath
@@ -830,6 +835,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                           
                           const videoBuffer = await new Promise<Buffer>((resolve, reject) => {
                               ffmpeg.on('close', (code) => {
+                                  try { fs.unlinkSync(audioPath); } catch (e) {}
                                   if (code !== 0) return reject(new Error(`FFmpeg exited with ${code}`));
                                   try {
                                       const buf = fs.readFileSync(tempVideoPath);
@@ -865,7 +871,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                               ffmpeg.stdin.end();
                           });
                           
-                          await sock.sendMessage(sender, { video: videoBuffer, caption: `🎵 ${track.title} - ${track.artist.name}` }, { quoted: msg });
+                          await sock.sendMessage(sender, { video: videoBuffer, caption: `🎵 ${track.trackName} - ${track.artistName}` }, { quoted: msg });
                       } else {
                           await reply("Lagu tidak ditemukan atau tidak ada preview.");
                       }
