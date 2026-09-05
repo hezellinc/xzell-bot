@@ -733,7 +733,231 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   break;
               }
               case 'iqc': {
-                  await reply(`[Fake Chat]\n${payload}`);
+                  if (!payload) return await reply("Ketik teks untuk pesan iqc.");
+                  try {
+                      const { createCanvas } = await import('@napi-rs/canvas');
+                      const width = 1080;
+                      const height = 1920;
+                      const canvas = createCanvas(width, height);
+                      const ctx = canvas.getContext('2d');
+
+                      ctx.fillStyle = '#0F1010';
+                      ctx.fillRect(0, 0, width, height);
+
+                      const drawRoundRect = (x, y, w, h, r, color) => {
+                          ctx.fillStyle = color;
+                          ctx.beginPath();
+                          ctx.roundRect(x, y, w, h, r);
+                          ctx.fill();
+                      }
+
+                      const msgText = payload;
+                      const date = new Date();
+                      const timeText = `${date.getHours().toString().padStart(2, '0')}.${date.getMinutes().toString().padStart(2, '0')}`;
+
+                      ctx.font = '40px sans-serif';
+                      const words = msgText.split(' ');
+                      let lines = [];
+                      let currentLine = '';
+                      const maxBubbleTextWidth = 700;
+
+                      for (let i = 0; i < words.length; i++) {
+                          let testLine = currentLine + words[i] + ' ';
+                          let testWidth = ctx.measureText(testLine).width;
+                          if (testWidth > maxBubbleTextWidth && i > 0) {
+                              lines.push(currentLine.trim());
+                              currentLine = words[i] + ' ';
+                          } else {
+                              currentLine = testLine;
+                          }
+                      }
+                      lines.push(currentLine.trim());
+
+                      ctx.font = '28px sans-serif';
+                      const timeWidth = ctx.measureText(timeText).width;
+
+                      let longestLineW = 0;
+                      ctx.font = '40px sans-serif';
+                      lines.forEach(l => {
+                          let w = ctx.measureText(l).width;
+                          if(w > longestLineW) longestLineW = w;
+                      });
+
+                      const isSingleLine = lines.length === 1;
+                      let bubbleWidth = 0;
+                      if (isSingleLine) {
+                          bubbleWidth = longestLineW + timeWidth + 60;
+                      } else {
+                          bubbleWidth = Math.max(longestLineW + 40, timeWidth + 40);
+                      }
+
+                      const lineHeight = 50;
+                      const bubbleHeight = (lines.length * lineHeight) + (isSingleLine ? 30 : 50);
+
+                      const bubbleX = 40;
+                      const startY = 800;
+
+                      const reactionText = "👍 ❤️ 😂 😮 😢 🙏 ➕";
+                      drawRoundRect(bubbleX, startY - 90, 480, 80, 40, '#2A2B2D');
+                      ctx.font = '35px "Noto Color Emoji"';
+                      ctx.fillText(reactionText, bubbleX + 20, startY - 35);
+
+                      drawRoundRect(bubbleX, startY, bubbleWidth, bubbleHeight, 25, '#1F2023');
+                      ctx.fillStyle = 'white';
+                      ctx.font = '40px sans-serif';
+                      lines.forEach((l, i) => {
+                          ctx.fillText(l, bubbleX + 20, startY + 50 + (i * lineHeight));
+                      });
+
+                      ctx.fillStyle = '#7E7F83';
+                      ctx.font = '28px sans-serif';
+                      ctx.fillText(timeText, bubbleX + bubbleWidth - timeWidth - 20, startY + bubbleHeight - 15);
+
+                      const menuWidth = 500;
+                      const menuY = startY + bubbleHeight + 20;
+                      const itemHeight = 85;
+                      const items = [
+                          { text: "Star", icon: "⭐" },
+                          { text: "Reply", icon: "↩️" },
+                          { text: "Forward", icon: "↪️" },
+                          { text: "Copy", icon: "📄" },
+                          { text: "Pin", icon: "📌" },
+                          { text: "Report", icon: "⚠️" },
+                          { text: "Delete", icon: "🗑️", color: "#FF453A" }
+                      ];
+
+                      drawRoundRect(bubbleX, menuY, menuWidth, items.length * itemHeight, 35, '#252525');
+
+                      items.forEach((item, index) => {
+                          const y = menuY + (index * itemHeight);
+                          
+                          ctx.fillStyle = item.color || 'white';
+                          ctx.font = '35px sans-serif';
+                          ctx.fillText(item.text, bubbleX + 40, y + 55);
+                          
+                          ctx.font = '35px "Noto Color Emoji"';
+                          ctx.fillText(item.icon, bubbleX + menuWidth - 70, y + 55);
+
+                          if (index < items.length - 1) {
+                              ctx.fillStyle = '#3A3A3C';
+                              ctx.fillRect(bubbleX + 30, y + itemHeight, menuWidth - 60, 2);
+                          }
+                      });
+
+                      const buffer = canvas.toBuffer("image/jpeg");
+                      await sock.sendMessage(sender, { image: buffer, caption: "Context Menu" }, { quoted: msg });
+                  } catch (e) {
+                      console.error("IQC error:", e);
+                      await reply("Gagal membuat gambar.");
+                  }
+                  break;
+              }
+              case 'bratgif':
+              case 'bratvideo': {
+                  if (!payload) return await reply("Ketik teks untuk bratgif.");
+                  await reply("Sedang membuat animasi teks brat... Mohon tunggu sebentar.");
+                  
+                  try {
+                      const text = payload.replace(/^video\s+/i, '');
+                      const words = text.split(' ');
+                      const { spawn } = await import('child_process');
+                      const { createCanvas } = await import('@napi-rs/canvas');
+                      const path = await import('path');
+                      const fs = await import('fs');
+
+                      const width = 512;
+                      const height = 512;
+                      const fps = 10;
+                      const framesPerWord = 5;
+                      const tempVideoPath = path.join(process.cwd(), `brat_${Date.now()}.mp4`);
+                      
+                      const ffmpeg = spawn('ffmpeg', [
+                          '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo',
+                          '-s', `${width}x${height}`, '-pix_fmt', 'rgba', '-r', `${fps}`,
+                          '-i', '-', 
+                          '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+                          tempVideoPath
+                      ]);
+
+                      const canvas = createCanvas(width, height);
+                      const ctx = canvas.getContext('2d');
+                      
+                      const videoBuffer = await new Promise<Buffer>((resolve, reject) => {
+                          ffmpeg.on('close', (code) => {
+                              if (code !== 0) return reject(new Error(`FFmpeg exited with ${code}`));
+                              try {
+                                  const buf = fs.readFileSync(tempVideoPath);
+                                  fs.unlinkSync(tempVideoPath);
+                                  resolve(buf);
+                              } catch (err) { reject(err); }
+                          });
+                          ffmpeg.on('error', reject);
+                          
+                          let currentWords = [];
+                          for (let i = 0; i < words.length; i++) {
+                              currentWords.push(words[i]);
+                              
+                              ctx.fillStyle = '#8ACE00';
+                              ctx.fillRect(0,0,width,height);
+                              
+                              ctx.fillStyle = 'black';
+                              ctx.textAlign = 'center';
+                              ctx.textBaseline = 'middle';
+                              
+                              ctx.filter = 'blur(2px)';
+                              
+                              let fontSize = 120;
+                              ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+                              
+                              let maxW = 0;
+                              for(let w of currentWords) {
+                                  let m = ctx.measureText(w).width * 0.7;
+                                  if (m > maxW) maxW = m;
+                              }
+                              
+                              if (maxW > width - 40) {
+                                  fontSize = Math.floor(fontSize * ((width - 40) / maxW));
+                              }
+                              const totalHeight = currentWords.length * fontSize;
+                              if (totalHeight > height - 40) {
+                                  fontSize = Math.floor(fontSize * ((height - 40) / totalHeight));
+                              }
+                              
+                              ctx.font = `${fontSize}px Arial, sans-serif`;
+                              let startY = (height - (currentWords.length * fontSize)) / 2 + (fontSize/2);
+                              
+                              ctx.save();
+                              ctx.translate(width/2, 0);
+                              ctx.scale(0.7, 1.1);
+                              
+                              for(let j=0; j<currentWords.length; j++) {
+                                  ctx.fillText(currentWords[j], 0, startY + (j*fontSize));
+                              }
+                              ctx.restore();
+                              
+                              const data = ctx.getImageData(0, 0, width, height).data;
+                              const buf = Buffer.from(data.buffer);
+                              
+                              for(let f=0; f<framesPerWord; f++) {
+                                  ffmpeg.stdin.write(buf);
+                              }
+                          }
+                          
+                          // Hold last frame
+                          const data = ctx.getImageData(0, 0, width, height).data;
+                          const buf = Buffer.from(data.buffer);
+                          for(let f=0; f<fps * 1.5; f++) {
+                              ffmpeg.stdin.write(buf);
+                          }
+                          
+                          ffmpeg.stdin.end();
+                      });
+                      
+                      await sock.sendMessage(sender, { video: videoBuffer, caption: "Brat text animated" }, { quoted: msg });
+                  } catch (e) {
+                      console.error("Bratgif error:", e);
+                      await reply("Gagal membuat video bratgif.");
+                  }
                   break;
               }
               case 'ytplay':
