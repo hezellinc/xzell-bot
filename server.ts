@@ -508,7 +508,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       ctx.lineJoin = 'round';
                       
                       const drawMemeText = (text: string, x: number, y: number) => {
-                          const lines = text.split('\\n');
+                          const lines = text.split('\n');
                           lines.forEach((line, i) => {
                               const yPos = y + (i * fontSize * 1.2);
                               ctx.strokeText(line, x, yPos);
@@ -522,7 +522,7 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                       }
                       if (bottomText) {
                           ctx.textBaseline = 'bottom';
-                          drawMemeText(bottomText.toUpperCase(), img.width / 2, img.height - 10 - (bottomText.split('\\n').length - 1) * (fontSize * 1.2));
+                          drawMemeText(bottomText.toUpperCase(), img.width / 2, img.height - 10 - (bottomText.split('\n').length - 1) * (fontSize * 1.2));
                       }
                       
                       const memeBuffer = await canvas.encode('png');
@@ -739,31 +739,139 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
               case 'ytplay':
               case 'spoplay': {
                   if (!payload) return await reply("Ketik judul lagu yang dicari.");
+                  await reply("Memproses lagu dan membuat video UI Spotify... Mohon tunggu (estimasi 10-20 detik).");
                   try {
                       const res = await axios.get(`https://api.deezer.com/search?q=${encodeURIComponent(payload)}`);
                       const track = res.data.data[0];
                       if (track && track.preview) {
-                          // Menggunakan Native Rich Player WA (Large Thumbnail)
-                          await sock.sendMessage(sender, { 
-                              audio: { url: track.preview }, 
-                              mimetype: 'audio/mp4',
-                              ptt: false,
-                              contextInfo: {
-                                  externalAdReply: {
-                                      title: track.title,
-                                      body: `Artist: ${track.artist.name} • Album: ${track.album.title}`,
-                                      thumbnailUrl: track.album.cover_xl || track.album.cover_medium,
-                                      sourceUrl: track.link,
-                                      mediaType: 1,
-                                      renderLargerThumbnail: true
-                                  }
+                          const { spawn } = await import('child_process');
+                          const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+                          const path = await import('path');
+                          
+                          const width = 540;
+                          const height = 960;
+                          const canvas = createCanvas(width, height);
+                          const ctx = canvas.getContext('2d');
+                          const fps = 15;
+                          const duration = 30; // Deezer previews are 30s
+                          const totalFrames = fps * duration;
+
+                          // Load Cover
+                          let coverImg;
+                          try {
+                              const coverUrl = track.album.cover_xl || track.album.cover_medium;
+                              coverImg = await loadImage(coverUrl);
+                          } catch (e) {
+                              // fallback empty
+                          }
+
+                          // Static BG
+                          ctx.fillStyle = '#121212';
+                          ctx.fillRect(0, 0, width, height);
+                          if (coverImg) {
+                              ctx.save();
+                              ctx.beginPath();
+                              ctx.roundRect(50, 100, 440, 440, 20); // Rounded corners
+                              ctx.clip();
+                              ctx.drawImage(coverImg, 50, 100, 440, 440);
+                              ctx.restore();
+                          } else {
+                              ctx.fillStyle = '#282828';
+                              ctx.beginPath();
+                              ctx.roundRect(50, 100, 440, 440, 20);
+                              ctx.fill();
+                          }
+
+                          // Title
+                          ctx.fillStyle = 'white';
+                          ctx.font = 'bold 36px sans-serif';
+                          ctx.textAlign = 'left';
+                          let displayTitle = track.title;
+                          if (displayTitle.length > 22) displayTitle = displayTitle.substring(0, 20) + '...';
+                          ctx.fillText(displayTitle, 50, 600);
+
+                          // Artist
+                          ctx.fillStyle = '#b3b3b3';
+                          ctx.font = '24px sans-serif';
+                          let displayArtist = track.artist.name;
+                          if (displayArtist.length > 30) displayArtist = displayArtist.substring(0, 28) + '...';
+                          ctx.fillText(displayArtist, 50, 640);
+
+                          // Playback Controls
+                          const btnY = 800;
+                          ctx.fillStyle = 'white';
+                          ctx.beginPath();
+                          ctx.arc(width / 2, btnY, 40, 0, Math.PI * 2);
+                          ctx.fill();
+                          ctx.fillStyle = 'black';
+                          ctx.beginPath();
+                          ctx.moveTo((width / 2) - 10, btnY - 15);
+                          ctx.lineTo((width / 2) + 15, btnY);
+                          ctx.lineTo((width / 2) - 10, btnY + 15);
+                          ctx.fill();
+
+                          ctx.fillStyle = 'white';
+                          ctx.beginPath(); ctx.moveTo(170 + 15, btnY - 12); ctx.lineTo(170 - 5, btnY); ctx.lineTo(170 + 15, btnY + 12); ctx.fill();
+                          ctx.fillRect(170 - 9, btnY - 12, 4, 24);
+                          ctx.beginPath(); ctx.moveTo(370 - 15, btnY - 12); ctx.lineTo(370 + 5, btnY); ctx.lineTo(370 - 15, btnY + 12); ctx.fill();
+                          ctx.fillRect(370 + 5, btnY - 12, 4, 24);
+
+                          const bgData = ctx.getImageData(0, 0, width, height);
+                          const tempVideoPath = path.join(process.cwd(), `spoplay_${Date.now()}.mp4`);
+                          
+                          const ffmpeg = spawn('ffmpeg', [
+                              '-y', '-f', 'rawvideo', '-vcodec', 'rawvideo',
+                              '-s', `${width}x${height}`, '-pix_fmt', 'rgba', '-r', `${fps}`,
+                              '-i', '-', '-i', track.preview,
+                              '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p',
+                              '-c:a', 'aac', '-t', `${duration}`,
+                              tempVideoPath
+                          ]);
+                          
+                          const videoBuffer = await new Promise<Buffer>((resolve, reject) => {
+                              ffmpeg.on('close', (code) => {
+                                  if (code !== 0) return reject(new Error(`FFmpeg exited with ${code}`));
+                                  try {
+                                      const buf = fs.readFileSync(tempVideoPath);
+                                      fs.unlinkSync(tempVideoPath);
+                                      resolve(buf);
+                                  } catch (err) { reject(err); }
+                              });
+                              ffmpeg.on('error', reject);
+                              
+                              for(let i=0; i<totalFrames; i++) {
+                                  ctx.putImageData(bgData, 0, 0);
+                                  const progress = i / totalFrames;
+                                  const barY = 710;
+                                  
+                                  ctx.fillStyle = '#4d4d4d';
+                                  ctx.beginPath(); ctx.roundRect(50, barY, 440, 6, 3); ctx.fill();
+                                  
+                                  ctx.fillStyle = 'white';
+                                  ctx.beginPath(); ctx.roundRect(50, barY, 440 * progress, 6, 3); ctx.fill();
+                                  
+                                  ctx.beginPath(); ctx.arc(50 + 440 * progress, barY + 3, 8, 0, Math.PI * 2); ctx.fill();
+                                  
+                                  const currentSec = Math.floor(i / fps);
+                                  ctx.fillStyle = '#b3b3b3'; ctx.font = '16px sans-serif';
+                                  ctx.fillText(`0:${currentSec.toString().padStart(2, '0')}`, 50, barY + 30);
+                                  ctx.textAlign = 'right';
+                                  ctx.fillText('0:30', 490, barY + 30);
+                                  ctx.textAlign = 'left';
+                                  
+                                  const data = ctx.getImageData(0, 0, width, height).data;
+                                  ffmpeg.stdin.write(Buffer.from(data.buffer));
                               }
-                          }, { quoted: msg });
+                              ffmpeg.stdin.end();
+                          });
+                          
+                          await sock.sendMessage(sender, { video: videoBuffer, caption: `🎵 ${track.title} - ${track.artist.name}` }, { quoted: msg });
                       } else {
                           await reply("Lagu tidak ditemukan atau tidak ada preview.");
                       }
                   } catch (e) {
-                      await reply("Gagal mencari lagu.");
+                      console.error("Spoplay error:", e);
+                      await reply("Gagal membuat video lagu.");
                   }
                   break;
               }
