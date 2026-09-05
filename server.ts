@@ -732,6 +732,70 @@ async function startWhatsAppBot(io: SocketIOServer, authMethod: "qr" | "pairing"
                   }
                   break;
               }
+              case 'ffqic': {
+                  if (!payload) return await reply("Ketik perintah dengan format: .ffqic set1 NamaKamu (pilih set1 sampai set5)");
+                  
+                  const parts = payload.split(' ');
+                  const setMatch = parts[0].toLowerCase();
+                  
+                  if (!setMatch.match(/^set[1-5]$/)) {
+                      return await reply("Harap sertakan kode set yang valid di awal (set1, set2, set3, set4, atau set5). Contoh: .ffqic set1 Budi");
+                  }
+                  
+                  const nameText = parts.slice(1).join(' ');
+                  if (!nameText) return await reply("Teks nama tidak boleh kosong.");
+                  
+                  try {
+                      const { createCanvas, loadImage } = await import('@napi-rs/canvas');
+                      const path = await import('path');
+                      const fs = await import('fs');
+                      
+                      const assetPath = path.join(process.cwd(), 'assets', `${setMatch}.jpeg`);
+                      if (!fs.existsSync(assetPath)) return await reply(`Maaf, template ${setMatch} belum tersedia.`);
+                      
+                      const img = await loadImage(assetPath);
+                      const canvas = createCanvas(img.width, img.height);
+                      const ctx = canvas.getContext('2d');
+                      
+                      ctx.drawImage(img, 0, 0);
+                      
+                      ctx.fillStyle = '#FFE9A6'; // Warna kuning pucat
+                      
+                      let fontSize = 28;
+                      ctx.font = `bold ${fontSize}px sans-serif`;
+                      ctx.textAlign = 'center';
+                      ctx.textBaseline = 'middle';
+                      
+                      ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+                      ctx.shadowBlur = 4;
+                      ctx.shadowOffsetX = 2;
+                      ctx.shadowOffsetY = 2;
+                      
+                      let displayText = nameText;
+                      let textWidth = ctx.measureText(displayText).width;
+                      const maxWidth = 180;
+                      
+                      if (textWidth > maxWidth) {
+                          while (textWidth > maxWidth && displayText.length > 0) {
+                              displayText = displayText.slice(0, -1);
+                              textWidth = ctx.measureText(displayText + '...').width;
+                          }
+                          displayText += '...';
+                      }
+                      
+                      const textX = 460;
+                      const textY = 1045;
+                      
+                      ctx.fillText(displayText, textX, textY);
+                      
+                      const buffer = canvas.toBuffer("image/jpeg");
+                      await sock.sendMessage(sender, { image: buffer, caption: "Ini hasil jadinya!" }, { quoted: msg });
+                  } catch (e) {
+                      console.error("FFQIC error:", e);
+                      await reply("Terjadi kesalahan saat memproses gambar.");
+                  }
+                  break;
+              }
               case 'iqc': {
                   if (!payload) return await reply("Ketik teks untuk pesan iqc.");
                   try {
